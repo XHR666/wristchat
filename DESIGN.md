@@ -1,59 +1,47 @@
-# OPPO Watch X2 AI 助手 **WristChat** — 设计文档 v0.3(待审阅)
+# OPPO Watch X2 AI 助手 **WristChat** — 设计文档 v0.4(待审阅)
 
-> v0.3 变更:应用名定为 WristChat(腕语商标冲突已弃用);会话超限只提醒不强制清理;密码默认关闭、免密默认 5;Skills 支持文件夹扫描 + 手动刷新 + 斜杠命令启用;流式输出确认 v2 再做。**本轮请重点审阅 §11 剩余问题。**
-> 状态:**待你审阅** | v0.1 → v0.2 变更摘要见 §13
+> v0.4 新增:GitHub 更新检查、深度思考+思维链折叠、对话详情(消耗/缓存命中/上下文/费用)、多轮对话确认、API Base URL+Path 自定义、设置页顶部会话上限提示。**本轮重点审阅 §11 剩余问题。**
+> 状态:**待你审阅**
 
 ---
 
 ## 0. 项目定位
 
-一款运行在 OPPO Watch X2(圆屏安卓手表)上的轻量 AI 助手应用:
+OPPO Watch X2(圆屏安卓手表)上的轻量 AI 助手:
 
-1. **聊天**:用你自己的 API Key(DeepSeek / 通义千问 / 任意 OpenAI 兼容服务)与 AI 对话
-2. **账户**:查看账户余额(仅 DeepSeek 官方支持,其他 Provider 明确标注"仅支持 DeepSeek 余额查询")
-3. **工具**:快捷输入、Skills 导入、会话管理、密码锁、LaTeX 渲染、AMOLED 深色模式
+1. **聊天**:多 Provider(DeepSeek / 通义千问 / 任意 OpenAI 兼容),支持深度思考(思维链可折叠查看)、多轮对话、LaTeX 渲染、快捷输入、Skills
+2. **账户**:DeepSeek 余额 / 高峰空闲时段徽章 / 今日用量 / 会话消耗统计
+3. **工具**:会话管理、密码锁、主题、**应用内检查更新(从 GitHub 下载并调系统安装器)**
 
-三个页面左右滑动切换;表冠可滚动;圆屏优先、方屏兼容。
-
-**应用名:WristChat | 包名:`io.github.<你的GitHub用户名>.wristchat`(待你提供用户名,见 §11-Q1)**
-> 「腕语」因商标冲突弃用。
+**应用名:WristChat | 包名:`io.github.xhr666.wristchat`**(GitHub 用户名 XHR666,已通过 gh 授权确认)
 
 ---
 
-## 1. 目标设备与环境(已确认)
+## 1. 目标设备与环境(已确认,同前)
 
 | 项目 | 值 |
 |---|---|
 | 设备 | OPPO Watch X2 (OWWE251),Android 11 (API 30) |
-| 屏幕 | 圆形 466px 直径,320 PPI → density **2.0**,最小宽度 **233dp**,2.06 英寸 |
+| 屏幕 | 圆形 466px 直径,320 PPI → density 2.0,最小宽度 233dp,2.06 英寸 |
 | 硬件 | 骁龙 W5 Gen 1,2GB RAM,32GB 存储 |
-| 表冠 | 产生标准 `ACTION_SCROLL` 旋转事件(微思应用商店 APK 反编译证实) |
-| 安装 | adb 侧载 / 微思应用商店 |
-| 参考项目 | 微思应用商店 3.7.2(标准 APK 可行性)、rikkahub(AGPL)、Operit(LGPL)、chatbox(GPL)、DeepSeek-Balance-Whale-Widget(DSH 插件) |
+| 表冠 | 标准 `ACTION_SCROLL` 旋转事件(微思商店 APK 反编译证实) |
+| 安装 | adb 侧载 / 微思应用商店 / 应用内更新(GitHub Releases) |
+| GitHub | 用户名 XHR666(token 来自 gh CLI 授权,仅运行时 API 调用,不入库) |
 
 ---
 
-## 2. 技术选型(与 v0.1 相同,补充说明)
+## 2. 技术选型(同前 + 补充)
 
 | 项 | 选择 | 备注 |
 |---|---|---|
-| 语言 | Kotlin | |
-| UI | 传统 View(RecyclerView / ViewPager2 / 自定义圆形遮罩) | 内存优先 |
-| 页面切换 | ViewPager2,3 页左右滑动 | |
-| 网络 | HttpURLConnection(零第三方依赖)+ kotlinx-coroutines | |
-| 存储 | SharedPreferences + Keystore AES-GCM 加密 | 会话历史:应用私有目录 JSON 文件 |
-| 主题 | 亮色 / 暗色 / AMOLED 纯黑(三档,设置页切换) | AMOLED 参考 rikkahub 思路(纯黑背景 #000、减亮色) |
-| LaTeX | 检测 `$...$` / `$$...$$` → **懒加载共享 WebView + KaTeX**(仅含公式的消息才创建;离开聊天页销毁) | 已核 KaTeX 体积:JS 275KB+CSS 23KB+字体 1.2MB,取**字体子集**(仅 KaTeX_Main 常规/粗体/斜体+Size1/2,约 500KB)打进 assets,内存可控(单个 WebView 复用),无公式消息纯 TextView |
-| 构建 | compileSdk 34 / targetSdk 34 / **minSdk 30** | |
-
-**依赖清单(全部 Jetpack 基础件,预计 APK < 9MB):**
-androidx.core-ktx、appcompat、recyclerview、viewpager2、constraintlayout、lifecycle-viewmodel-ktx、security-crypto(仅 MasterKey 部分,若体积超标则用自研 Keystore 封装替代)
-
-**参考项目可借鉴点(已分析源码,仅思路不抄代码;协议红线见 §13-Q8):**
-- **Provider 抽象**(rikkahub 的无状态 Provider 接口最干净):本项目用简化版 —— `Provider` 接口(baseUrl / 模型列表 / 是否支持余额),DeepSeekProvider / QwenProvider / CustomProvider 三个实现,设置页切换
-- **AMOLED 适配**(rikkahub):深色模式下把 background/surface 统一覆盖为 `#000000` 即可,本项目暗色=Material 深色,AMOLED=纯黑背景+减亮
-- **Skills 格式**(chatbox 的 SKILL.md 方案):文件 = front-matter(name/description)+ Markdown 指令正文;本项目 v1 支持导入该类文件,存 filesDir/skills/,启用后注入系统提示词
-- **LaTeX 方案取舍**:chatbox 用 KaTeX(WebView 路线,MIT 协议✓);Operit/rikkahub 用 jlatexmath 原生渲染,但 **jlatexmath 是 GPL 协议,会污染 MIT 项目** → 本项目坚持 **KaTeX(WebView 懒加载)**,协议干净 + 渲染效果好 |
+| 语言/UI | Kotlin + 传统 View(RecyclerView/ViewPager2/自定义圆形遮罩) | 内存优先 |
+| 网络 | HttpURLConnection + kotlinx-coroutines | 零第三方网络依赖 |
+| 存储 | SharedPreferences + Keystore AES-GCM;会话 JSON 文件 | |
+| LaTeX | 懒加载共享 WebView + KaTeX(字体子集 ~500KB) | KaTeX 是 MIT,不污染项目 |
+| **深度思考** | `thinking:{type,reasoning_effort}` + `reasoning_content` 折叠展示 | 官方 thinking_mode 文档已核对 |
+| **对话详情** | 会话文件累计每次 usage;费用按 峰谷×模型 定价表实时计算 | |
+| **更新检查** | GitHub Releases API + 版本比对 + 下载 + 系统安装器 | 见 §7.5 |
+| 构建 | compileSdk 34 / targetSdk 34 / minSdk 30 | |
 
 ---
 
@@ -61,25 +49,23 @@ androidx.core-ktx、appcompat、recyclerview、viewpager2、constraintlayout、l
 
 ```mermaid
 flowchart TD
-    A[MainActivity] --> B[AppLock 密码验证页<br/>4位密码/30s锁定/0000强制重置/免密次数]
+    A[MainActivity] --> B[AppLock 密码页 默认关闭]
     B --> C{ViewPager2 三页}
     C --> D[页1 聊天]
     C --> E[页2 余额/时段]
     C --> F[页3 设置]
-    D --> D1[消息列表 RecyclerView<br/>TextView+懒加载WebView(LaTeX)]
-    D --> D2[输入栏 + 快捷输入面板]
-    D2 --> D3[全屏输入页<br/>自动唤起系统输入法,关闭不发送]
-    D --> D4[ChatViewModel<br/>草稿/会话常驻,切页不清空]
-    D4 --> D5[ChatRepository<br/>POST /chat/completions]
-    E --> E1[时段徽章:高峰/空闲 实时计算]
-    E --> E2[总余额/充值/赠送/可用状态<br/>GET user/balance 仅DeepSeek]
-    E --> E3[今日已用/累计消费<br/>平台Token实时 or 本地记账]
-    F --> F1[Provider+API Key 加密存储]
-    F --> F2[模型选择(需先填Key)<br/>单模型统管全部用途]
-    F --> F3[快捷输入管理]
-    F --> F4[Skills 导入管理]
-    F --> F5[会话管理:列表/删除/占用空间]
-    F --> F6[密码设置/主题/关于]
+    D --> D1[消息列表: 气泡/思维链折叠/LaTeX]
+    D --> D2[对话详情入口 ⓘ]
+    D --> D3[全屏输入页 + 快捷输入面板 + 斜杠命令]
+    D --> D4[ChatViewModel: 草稿/会话/用量累计]
+    D4 --> D5[ChatRepository POST chat/completions]
+    D5 --> D6[思考模式 + 多轮拼接 + usage 解析]
+    E --> E1[时段徽章 + 余额 + 今日用量]
+    F --> F1[Provider/Key/BaseURL/Path]
+    F --> F2[模型/思考模式/参数]
+    F --> F3[快捷输入/Skills/会话管理]
+    F --> F4[检查更新/密码/主题/关于]
+    F4 --> F5[GitHub Releases → 下载 APK → 系统安装器]
 ```
 
 ---
@@ -90,220 +76,170 @@ flowchart TD
 
 ```
 ┌─────────────────────┐
-│ ● 模型名   ⟳  ⌨  ⋮  │  ← 顶部:模型名/新对话/快捷输入开关/菜单
+│ ● 模型名 ⓘ ⟳ ⌨  ⋮  │  ← ⓘ=对话详情,⌨=快捷输入面板
 │ ┌───────────────┐  │
-│ │ 我:你好        │  │  ← 消息气泡(用户右/AI左)
-│ │ AI:你好!...   │  │     含 $...$ 时走 KaTeX 渲染
+│ │ 💭 思考过程 ▸  │  │  ← 思维链折叠(点开看 reasoning_content)
+│ │ AI:你好!...   │  │     LaTeX 公式走 KaTeX
 │ └───────────────┘  │
-│  …(表冠可滚动)      │
+│  …(表冠滚动)        │
 │ ┌──────────┐  ┌──┐ │
-│ │ 输入框…   │  │➤│ │  ← 点击输入框 → 全屏输入页
+│ │ 输入框…   │  │➤│ │
 │ └──────────┘  └──┘ │
 └─────────────────────┘
 ```
 
-**输入交互(按你的要求 14):**
-1. 点击输入框 → 切换到**全屏输入页**(圆屏全覆盖)
-2. 全屏页自动唤起系统输入法,EditText 自动聚焦
-3. **关闭输入法不会自动发送** —— 停留在全屏页,可继续输入或按「发送」
-4. 点「发送」→ 提交并返回聊天页;点左上角返回 → 回到聊天页(草稿保留)
+**深度思考(要求 2,官方文档已核对):**
+- 设置页:思考模式开关(默认开,API 默认)+ effort 选择(低/高/最大;medium/xhigh 官方映射为 high,故 UI 只给 3 档)
+- 开启时:响应含 `message.reasoning_content`(思维链)与 `content`(最终回答)
+- 展示:AI 气泡上方一条可折叠的「💭 思考过程」,点击展开/收起(展开内容较长时可表冠滚动)
+- 多轮回传规则(官方):不带 tools 时 `reasoning_content` **不回传**(传了也被忽略)—— 我们不做 tools,v1 不回传
+- 思考模式不支持 temperature/top_p(传了不生效)→ 思考开启时这两个参数控件置灰
 
-**快捷输入(要求 2):**
-- 聊天页输入栏左侧有一个**向上箭头按钮** → 从底部弹出**快捷输入面板**(半屏卡片)
-- 面板列出设置页维护的快捷条目,点一下 → 文字填入输入框(光标在末尾,可继续手写)
-- 面板可滚动(表冠可用),再次点箭头收起
+**对话详情(要求 3,入口=顶部 ⓘ):**
+| 项 | 数据来源 |
+|---|---|
+| 本次对话消耗 tokens | 每次响应 `usage` 累计(输入+输出,含思考 tokens) |
+| 缓存命中率 | `prompt_cache_hit_tokens ÷ prompt_tokens`(每次请求后更新) |
+| 占用的上下文 | 最近一次 `prompt_tokens`(当前发出去的上下文大小)+ 消息条数;显示占模型上下文窗口(128K)的百分比 |
+| 消耗余额 | 逐条累计:`命中×谷/峰价 + 未命中×谷/峰价 + 输出×谷/峰价`(按该次请求发生时间与模型查定价表,官方 usage 字段已核对) |
 
-**其他:**
-- 发送中显示"思考中…"占位气泡;失败显示错误+重试
-- 整段返回(v1);流式输出列为 v2 增强(见 §13 解释)
-- LaTeX 渲染(要求 10):`$$...$$` 块级、`$...$` 行内;渲染失败时降级显示原始文本
-- 图片上传:暂不做(要求 15)
+**多轮对话(要求 4,官方 multi_round_chat 已核对):**
+- API 无状态,客户端自行拼接:系统提示(Skills 注入)→ 历史 user/assistant → 新提问
+- 每条消息存会话文件(role/content/时间/该轮 usage/思考链)
+- 上限 100 条/会话,超出**不强制清理**,提示建议清理(设置页顶部横幅)
 
-### 4.2 页2 — 余额/时段
+**其他上下文相关功能(要求 5,官方文档筛选后 v1 可实现):**
+- ✅ 自动上下文缓存:DeepSeek 自动生效,我们在对话详情展示命中率(零额外成本)
+- ✅ 多轮拼接 + 系统提示稳定前缀(提升缓存命中)
+- ✅ 思考模式
+- 🔸 可选(设置-高级):JSON 输出(response_format)、发送前离线 token 估算(1 中文字≈0.6 token / 1 英文字符≈0.3,官方 token_usage 文档)—— 默认关
+- ⏸ v2+:函数调用 tools、FIM 补全、前缀补全、图片理解(图片导入已确认不做)
 
-```
-┌─────────────────────┐
-│ ● 余额       ⟳      │
-│ [🌞 高峰时段]       │  ← 时段徽章,实时计算(北京时间)
-│                     │     显示当前时段 + 距下次切换倒计时
-│   ¥ 110.00          │  ← 总余额(大数字)
-│   [可用 ✓]          │
-│ ┌─────────────────┐ │
-│ │ 充值余额  100.00 │ │
-│ │ 赠送余额   10.00 │ │  ← 仅 DeepSeek 显示官方余额
-│ │ 币种      CNY    │ │
-│ └─────────────────┘ │
-│ ┌─────────────────┐ │
-│ │ 今日已用  ¥1.23  │ │  ← 平台Token实时 or 本地记账
-│ │ 累计消费  ¥87.5  │ │  ← 本地统计(标注来源)
-│ └─────────────────┘ │
-│ [⚠ 仅支持 DeepSeek ]│  ← 非 DeepSeek Provider 时整页显示此提示
-└─────────────────────┘
-```
+**输入交互(同 v0.3):** 点输入框 → 全屏输入页(自动唤起输入法,关输入法不发送);快捷输入面板(箭头弹出,点击填入可继续编辑);斜杠命令 `/skills` `/on` `/off`
 
-**时段徽章(要求 12):**
-- 高峰:北京时间**周一至周五 9:00–12:00、14:00–18:00**;其余为空闲
-- 每 60s 刷新一次;显示「🌞 高峰(约剩 1 小时 20 分)」/「🌙 空闲」
-- 定价表(官方,代码内可更新):
+### 4.2 页2 — 余额/时段(同 v0.3,不变)
 
-| 模型 | 输入·缓存命中(谷/峰) | 输入·未命中(谷/峰) | 输出(谷/峰) | 单位 |
-|---|---|---|---|---|
-| v4-flash / vision-exp | 0.05 / 0.10 | 1.5 / 3.0 | 4.5 / 9.0 | 元/百万 tokens |
-| v4-pro(3 倍价) | 0.15 / 0.30 | 4.5 / 9.0 | 13.5 / 27.0 | 同上 |
-
-> 来源:api-docs.deepseek.com/zh-cn/quick_start/pricing(已核对,谷价=峰价一半;扣费优先扣赠送余额)
+时段徽章(北京周一至五 9-12/14-18 为高峰,谷=峰价一半)+ 官方余额(充值/赠送/总余额/可用)+ 今日已用(平台 Token 实时 or 本地记账)+ 本应用累计消费(与会话详情口径一致)
 
 ### 4.3 页3 — 设置
 
 | 分组 | 内容 |
 |---|---|
-| **服务** | Provider 选择:**DeepSeek**(默认)/ **通义千问** / **自定义**(OpenAI 兼容,填 Base URL);API Key 输入(掩码,Keystore 加密) |
-| **模型** | 模型选择(未填 Key 时**禁用**并提示"请先填写 API Key");**单个模型统管所有用途**(聊天/快速/标题总结/翻译/OCR/压缩全部用这一个,要求 13)。DeepSeek 模型列表:deepseek-v4-flash(默认)/ deepseek-v4-pro / deepseek-v4-flash-vision-exp |
-| **快捷输入** | 条目增删改(每条:内容文本);聊天页箭头面板即用此处数据 |
-| **Skills** | ① 导入:SAF 文件选择(格式=SKILL.md:front-matter 名称/描述 + 指令正文)或**把文件放进指定文件夹**(filesDir/skills/) ② 设置页「刷新扫描」按钮 → 发现新文件弹窗提示导入 ③ 启用:**设置页开关** 或 **聊天输入框斜杠命令** `/skills`(列出)/`/on <名字>`(启用)/`/off <名字>`(禁用) ④ 启用后其指令注入系统提示词,**在当前上下文持续生效**,直到手动禁用 |
-| **会话** | 会话列表(查看/删除单个/清空全部)、**会话总占用空间**显示 |
-| **安全** | 密码:**默认关闭**;开启/修改(需旧密码)/免密次数(**默认 5**);主题:亮色/暗色/AMOLED |
-| **关于** | 开源仓库、版本、免责声明(直连官方,Key 只存本机) |
+| **服务** | Provider:DeepSeek / 通义千问 / 自定义;**API Base URL** 与 **API 路径** 可填写(默认值见下,要求 6);API Key(掩码,加密存储) |
+| **模型/思考** | 模型选择(需先填 Key);思考模式开关 + effort(低/高/最大) |
+| **快捷输入** | 条目增删改 |
+| **Skills** | SAF 导入 / filesDir/skills/ 文件夹 / 刷新扫描 / 斜杠命令启用 |
+| **会话** | 会话列表(查看/删除/清空)、总占用空间;**顶部横幅:会话已达上限,建议清理**(要求 A4,不在聊天页弹横幅) |
+| **更新** | **检查更新**按钮:调 GitHub Releases,比对版本,发现新 APK 版本→提示→下载→系统安装器(要求 1) |
+| **安全/主题** | 密码(默认关,免密默认 5)/ 亮/暗/AMOLED |
+| **关于** | 开源仓库、版本、免责声明 |
+
+**API Base URL / 路径默认值(要求 6,已核对官方文档):**
+
+| Provider | Base URL | 路径 | 完整示例 |
+|---|---|---|---|
+| DeepSeek | `https://api.deepseek.com` | `/chat/completions` | `https://api.deepseek.com/chat/completions` |
+| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `/chat/completions` | `.../v1/chat/completions` |
+| 自定义 | 用户填 | 默认 `/chat/completions` | |
+
+> 注:DeepSeek 官方 OpenAI 格式 Base 即 `https://api.deepseek.com`(`/v1` 前缀也可用,但默认不填);Anthropic 格式 `https://api.deepseek.com/anthropic`(本项目走 OpenAI 格式)
 
 ---
 
-## 5. 圆屏适配(同 v0.1,不变)
+## 5. 圆屏适配 / 6. 表冠滚动(同 v0.3,不变)
 
-466px ÷ 2 = **233dp 圆**(density 2.0);圆形裁剪 ViewOutlineProvider;安全区 inset 差异化(顶底条 20dp/列表 24dp/输入栏 20dp);方屏自动退化为圆角矩形 12dp。
-
----
-
-## 6. 表冠滚动(同 v0.1,不变)
-
-`dispatchGenericMotionEvent` 拦截 `ACTION_SCROLL` → 路由当前可见页 RecyclerView;灵敏度可调(0.5–2.0);音量键/DPAD 兜底;键盘打开时路由给全屏输入页滚动。
+圆形裁剪 + 差异化安全区;方屏退化圆角矩形。表冠 ACTION_SCROLL + 音量键/DPAD 兜底 + 灵敏度可调。
 
 ---
 
 ## 7. 数据层
 
-| 用途 | 方法 | 端点 | 认证 |
-|---|---|---|---|
-| 聊天 | POST | `{base}/chat/completions`(OpenAI 兼容) | Bearer Key |
-| 余额(仅 DeepSeek) | GET | `https://api.deepseek.com/user/balance` | Bearer Key |
-| 今日用量(可选) | GET | `https://platform.deepseek.com/api/v0/usage/by_api_key/amount?start=&end=&tz=` | Bearer 平台Token |
+### 7.1 接口清单
 
-- DeepSeek base:`https://api.deepseek.com`;千问 base:`https://dashscope.aliyuncs.com/compatible-mode/v1`(OpenAI 兼容,已查证);自定义:用户填
-- 超时:连接 15s / 读 60s(聊天) 15s(余额);失败重试 1 次;错误分类(401→检查 Key;429/5xx→稍后再试;超时→网络超时)
-- 会话持久化:每个会话一个 JSON 文件(应用私有目录),上限 100 条消息/会话、会话数上限 20;**超出不强制清理,仅在对应会话/会话列表处提示"已达上限,建议清理"**,由用户决定;设置页显示总占用(计算文件大小之和)
-- 余额/用量数据缓存 SharedPreferences,断网显示上次数据+时间戳
-
----
-
-## 8. 内存与体积优化清单
-
-- [ ] 依赖仅 Jetpack 基础件 + coroutines;无 OkHttp/无 Tink(加密用自研 Keystore 封装)
-- [ ] LaTeX WebView **懒加载**:仅含公式消息才创建,共享单例,离开聊天页销毁
-- [ ] RecyclerView 复用;会话历史内存上限 30 条(超出丢弃最旧,磁盘不受限)
-- [ ] VectorDrawable 全图标;R8 + 资源收缩
-- [ ] 无后台服务;AMOLED 纯黑主题省电
-- [ ] 目标:常驻 RSS < 85MB(含 WebView 峰值),APK < 9MB
-
----
-
-## 9. 安全设计
-
-- [ ] **仓库零敏感信息**:Key/Token 仅运行时输入 + Keystore 加密;代码/README/示例零密钥
-- [ ] `.gitignore`:local.properties、*.keystore、keystore.properties、build/
-- [ ] 全 HTTPS;`usesCleartextTraffic=false`;不自定义 TrustManager
-- [ ] 权限最小化:仅 INTERNET(+ 可选的 VIBRATE);`allowBackup=false`
-- [ ] 日志/崩溃不输出 Key
-- [ ] Qoder CLI 安全审查 + 人工 diff 复核
-- [ ] **License:MIT** + 只借鉴参考项目**设计思路**,不拷贝其代码/资源(它们分别是 AGPL/LGPL/GPL,代码不能进 MIT 项目);README 注明灵感来源(见 §13-Q8 分析)
-
----
-
-## 10. 密码锁(要求 17,详细设计)
-
-**开启/关闭:** 设置页开启后,每次启动 App 先过密码页
-**验证流程:**
-1. 4 位数字密码,启动时单独验证一次
-2. 连续错误 **5 次** → 锁定 **30 秒**(显示倒计时,期间输入无效)
-3. 解锁后继续可尝试
-**紧急重置(强制关闭密码):**
-- 连续 5 次错误输入的值都是 `0000` → 触发 30s 锁定;锁定结束后**再输入一次 `0000`** → **强制关闭密码功能**(无论原密码是什么)
-- 实现:记录最近 5 次失败输入值;若全部为 "0000" 且已达 5 次 → 置 pendingReset 标志 → 解锁后下次输入 0000 即执行重置
-**免密次数:** 设置「未来 N 次启动免密码输入」(N=0 表示每次都验证);每免密一次计数递减,到 0 恢复验证
-**其他:** 修改密码需先验证旧密码;密码哈希存储(加盐 SHA-256),不存明文
-
----
-
-## 11. 需要你确认的问题(本轮 frontier,均附我的推荐)
-
-**Q1 · GitHub 用户名(决定包名)**:包名想指向你的 GitHub 仓库 → 用 `io.github.<用户名>.wristchat`
-➡️ 请提供你的 GitHub 用户名(注意:用户名含 `-` 或数字开头时需微调,如 `-` 去掉或转成下划线,Java 包名规则限制)
-- 顺带解释你问的 **GitHub `.io` 域名**:那是 **GitHub Pages**(免费静态网站托管,不是"申请域名"):
-  1. 每个 GitHub 账号免费送一个 `https://<用户名>.github.io` 站点(在仓库 Settings → Pages 开启即可)
-  2. 每个项目仓库还能开 `https://<用户名>.github.io/<仓库名>/` 的子站点
-  3. 想要真正的 `.io` 域名(如 `myapp.io`)得去域名商(如 Namecheap/阿里云)花钱买,然后 DNS 解析指向 GitHub Pages
-  4. 对我们项目:包名 `io.github.<用户名>.wristchat` 只是**约定俗成的命名规范**,与 Pages 站点地址恰好同构,纯装饰性;应用侧载不需要域名
-  5. 等开源后可以顺手开一个 Pages 站点做项目介绍页(可选,不影响 App)
-
-**Q2 · 斜杠命令启用 Skills 的交互确认**:聊天框输入 `/skills`、`/on 名字`、`/off 名字` 来管理;同时设置页也有开关 —— 两种都要吗?
-➡️ 推荐:两种都要(斜杠命令方便在聊天中直接切,设置页方便管理)
-
-**Q3 · 界面语言**:v1 只做中文界面,可以吗?
-➡️ 推荐:中文(手表用户是你;英文后续再加)
-
-**Q4 · 会话容量提示方式**:达到 100 条/20 个上限时,在聊天页顶部显示一条小横幅"已达上限,建议清理"即可?
-➡️ 推荐:横幅提示 + 设置页会话列表可批量删
-
-**已定死、不用再确认(本轮更新):**
-- 应用名 WristChat(不含 deepseek)✅
-- 密码**默认关闭**,免密默认 5,规则同 v0.2 §10 ✅
-- 会话超限**只提醒不强制清理** ✅
-- Skills:文件夹扫描 + 手动刷新 + 提示导入;启用后当前上下文持续生效 ✅
-- 流式输出 v2 再做(你授权我决定)✅
-
----
-
-## 12. 里程碑
-
-| 阶段 | 内容 | 产出 |
+| 用途 | 方法 | 端点 |
 |---|---|---|
-| M0 ✅ | 环境搭建、APK 分析、API/定价调研、本文档 | 设计文档 v0.2 |
-| M1 | 工程骨架:三页 ViewPager2 + 圆形遮罩 + 主题三档 + 密码锁 | 可跑 APK |
-| M2 | 设置页:Provider/Key 加密存储/模型选择/快捷输入/Skills/会话管理 | 设置可用 |
-| M3 | 余额页:时段徽章 + 官方余额 + 用量双模式 | 余额可见 |
-| M4 | 聊天页:全屏输入 + 消息列表 + LaTeX + 快捷输入面板 + 会话持久化 | 能对话 |
-| M5 | 表冠滚动全页面 + 调参 + 方屏验证 | 手感 OK |
-| M6 | 内存/体积优化、R8、Qoder 审查、README、GitHub 开源 | 发布 APK |
-| M7 | 你实机反馈,修 bug 调手感;v2 规划(流式等) | v1.0 |
+| 聊天 | POST | `{BaseURL}{Path}`(OpenAI 兼容) |
+| 余额 | GET | `https://api.deepseek.com/user/balance`(仅 DeepSeek) |
+| 今日用量(可选) | GET | `https://platform.deepseek.com/api/v0/usage/by_api_key/amount?start=&end=&tz=` |
+| **检查更新** | GET | `https://api.github.com/repos/{owner}/{repo}/releases/latest` + 资产下载 |
+
+### 7.2 usage 字段(官方已核对,对话详情用)
+
+`usage`:prompt_tokens(=hit+miss)、prompt_cache_hit_tokens、prompt_cache_miss_tokens、completion_tokens、total_tokens、completion_tokens_details.reasoning_tokens
+`message.reasoning_content`:思考模式思维链
+
+### 7.3 定价表(官方,峰谷)
+
+flash/vision:命中 0.05/0.10 · 未命中 1.5/3.0 · 输出 4.5/9.0(元/百万,谷/峰);pro=3 倍。高峰=北京周一至五 9-12/14-18。
+
+### 7.4 会话持久化
+
+每会话一个 JSON(私有目录):消息数组(role/content/reasoning/时间)+ 用量累计字段(总 tokens/缓存命中/费用)。上限 100 条/20 会话,超限提示不清理。设置页显示总占用(文件大小求和)。
+
+### 7.5 检查更新流程(要求 1,防"假更新")
+
+1. 点击「检查更新」→ GET GitHub Releases latest(公开仓库,无需 token)
+2. **校验"真更新"**:① 该 release 必须带 APK 资产(无 APK 资产 → 提示"暂无可用更新",**不因 README 提交而提示**)② `tag_name` 语义版本 > 当前 versionName(版本号规则 v主.次.修,比对时忽略预发布)
+3. 满足才提示"发现新版本 vX.Y.Z" → 点击下载(进度条,断网重试)
+4. 下载完成 → 校验 APK 完整性(PackageManager 可解析 + 与资产 SHA256 匹配,如提供)→ FileProvider 授权 → `ACTION_VIEW`(MIME `application/vnd.android.package-archive`)调**系统安装器**
+5. 安装完成回到应用;失败(如"不允许安装未知应用")提示引导去系统设置开启
+6. 仓库名/owner 从设置读取默认 `XHR666/wristchat`(可改,见 §11-Q1)
 
 ---
 
-## 13. 附:v0.1 → v0.2 变更摘要 & 名词解释
+## 8. 内存与体积优化(同前 + 更新下载不常驻)
 
-**你的 18 条 → 落地位置:**
-1. 参考项目 → §2 参考 + README 灵感来源(仅思路,不抄代码)
-2. 快捷输入 → §4.1 + 设置页
-3. 多 Provider → §4.3「服务」;余额仅 DeepSeek → §4.2 提示
-4. 先填 Key 才能选模型 → §4.3「模型」禁用逻辑
-5. V1/V2 解释 → 见下
-6. 会话持久化 + 列表删除 + 占用空间 → §4.3「会话」+ §7
-7. 包名/应用名自拟 → §0
-8. MIT 适不适合 → 见下「Q8 分析」
-9. 平台 Token 方案接受 → §7
-10. LaTeX 渲染 → §4.1 + §2
-11. Skills 导入 → §4.3「Skills」
-12. 三个模型 + 时段徽章 → §4.2 + 定价表(官方核对)
-13. 单模型统管 → §4.3「模型」
-14. 全屏输入交互 → §4.1
-15. 图片导入不做 → §4.1
-16. 亮/暗/AMOLED → §4.3「安全·主题」
-17. 四位密码锁 → §10
-18. 本文档 + 问题清单 → §11
+- 更新下载用前台一次性任务,完成后释放;不常驻服务
+- 思维链折叠:展开时才 inflate 展开视图;收起仅一行
+- 其余同 v0.3 清单(懒加载 WebView / R8 / 无后台服务…)
 
-**Q5 解释「V1/V2」:**
-- **V1 = 第一版**(本次交付):整段返回对话、余额、设置、密码锁、LaTeX、快捷输入等全部核心功能
-- **V2 = 后续增强版**(你实机用过后再排):流式打字机输出、图片理解(vision)、多会话云端同步等
-- 不是两个产品,是同一个 App 的版本迭代计划
+---
 
-**Q8 分析「MIT 适合吗」:**
-- 你发的三个参考项目协议:rikkahub **AGPL-3.0**、Operit **LGPL-3.0**、chatbox **GPL-3.0**,三者都是**传染性(copyleft)**协议
-- 规则:**只借鉴设计思路(架构、交互、功能概念)→ 不受协议约束,MIT 完全没问题**;**直接拷贝代码/资源/翻译代码 → 派生作品,必须整体改用对应协议**,MIT 不可行
-- 结论:本项目保持 **MIT**,遵守红线:不拷贝那三个项目的任何代码和资源文件,README 中注明"灵感来源于 xxx"。代码全部自己写(或来自 MIT/Apache 协议的库)
+## 9. 安全设计(同前 + 更新通道)
+
+- 仓库零敏感信息;GitHub token 仅存在于本机 gh 配置,App 内更新走**公开 API 无需 token**
+- APK 下载全 HTTPS;安装前校验来源(release 资产 URL 固定 GitHub 域名)
+- 其余同 v0.3(Keystore 加密 / 最小权限 / 禁明文 / MIT + 只借鉴思路)
+
+---
+
+## 10. 密码锁(同 v0.3:默认关闭;5 错锁 30s;0000×5→解锁后 0000 强制关闭;免密默认 5)
+
+---
+
+## 11. 需要你确认的问题(本轮 frontier)
+
+**Q1 · GitHub 仓库名**:更新检查需要仓库名,默认 `XHR666/wristchat` 对吗?(还是已建好别的仓库名?)
+➡️ 推荐:`wristchat`;没建的话我建议现在就建空仓库,后续直接推代码
+
+**Q2 · 思考模式默认值**:默认「开 + effort 高」(API 官方默认)还是「开 + effort 低」?低档在手表上返回更快
+➡️ 推荐:开 + effort 低(手表体验优先;设置里可改高档)
+
+**Q3 · 启动时自动检查更新?**:设置里「检查更新」手动按钮之外,是否每次进设置页自动静默检查一次?(有更新才提示,不打扰)
+➡️ 推荐:是(进设置页自动查,有新版才弹提示)
+
+**Q4 · 对话详情费用与余额页累计口径**:对话详情累计的消耗金额,同时计入余额页「本应用累计消费」?
+➡️ 推荐:计入(两处一致,避免数字对不上)
+
+**Q5 · 上下文窗口提示**:对话详情里显示"已用上下文 X/128K",超 70% 时聊天页顶部一条小字提示"上下文较大,建议开新对话"?(非横幅,不打扰)
+➡️ 推荐:是(小字提示,仅一次)
+
+**已定死(本轮):**
+- 包名 `io.github.xhr666.wristchat`(GitHub 用户名已从 gh 授权确认)✅
+- Skills 双通道(斜杠+设置开关)、中文界面 ✅
+- 会话超限 → 设置页顶部提示(非聊天横幅)✅
+- API Base URL+Path 可填,DeepSeek/千问默认值已核对 ✅
+
+---
+
+## 12. 里程碑(同前,插入更新功能到 M6)
+
+M0 ✅ 调研+文档 | M1 骨架+遮罩+主题+密码 | M2 设置(Provider/Key/模型/思考/快捷/Skills/会话) | M3 余额+时段 | M4 聊天(全屏输入/多轮/思维链折叠/LaTeX/对话详情/快捷输入) | M5 表冠+方屏 | M6 **更新检查**+内存优化+R8+Qoder 审查+README+开源 | M7 实机反馈
+
+---
+
+## 13. 变更摘要
+
+**v0.3 → v0.4:** GitHub 更新检查(§7.5)、深度思考+思维链折叠(§4.1)、对话详情(§4.1)、多轮对话确认(§4.1)、API Base URL+Path(§4.3/§7.1)、设置页会话上限提示(§4.3)、包名确定 io.github.xhr666.wristchat(§0)、GitHub 用户名经 gh 授权确认
+
+**v0.2 → v0.3:** 应用名 WristChat、会话超限只提醒、密码默认关、Skills 文件夹扫描+斜杠命令、流式 v2
