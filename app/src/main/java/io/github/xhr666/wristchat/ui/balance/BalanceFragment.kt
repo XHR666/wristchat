@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import io.github.xhr666.wristchat.databinding.FragmentBalanceBinding
+import io.github.xhr666.wristchat.ui.common.RoundInsets
 
 class BalanceFragment : Fragment() {
 
@@ -21,6 +22,12 @@ class BalanceFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 圆屏安全区:顶部栏动态收窄
+        binding.root.post {
+            val inset = RoundInsets.horizontalInsetPx(binding.root, binding.topBar.top.toFloat() + binding.topBar.height / 2f)
+            val minInset = (6 * resources.displayMetrics.density).toInt()
+            binding.topBar.setPadding(inset.coerceAtLeast(minInset), binding.topBar.paddingTop, inset.coerceAtLeast(minInset), binding.topBar.paddingBottom)
+        }
         binding.btnRefresh.setOnClickListener { vm.refresh() }
         vm.ui.observe(viewLifecycleOwner) { u ->
             if (u == null) return@observe

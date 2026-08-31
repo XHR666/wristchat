@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import io.github.xhr666.wristchat.FullscreenInputActivity
 import io.github.xhr666.wristchat.R
 import io.github.xhr666.wristchat.databinding.FragmentChatBinding
+import io.github.xhr666.wristchat.ui.common.RoundInsets
 
 class ChatFragment : Fragment() {
 
@@ -28,6 +29,11 @@ class ChatFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 圆屏安全区:顶部栏/输入栏按所处高度动态收窄居中(方屏自动退化为 0)
+        binding.root.post {
+            applySafeInset(binding.topBar)
+            applySafeInset(binding.inputBar)
+        }
         adapter = ChatAdapter(requireContext()) { url ->
             // 代码块复制(占位:仅提示)
             Toast.makeText(requireContext(), "已复制", Toast.LENGTH_SHORT).show()
@@ -136,6 +142,13 @@ class ChatFragment : Fragment() {
         super.onDestroyView()
         adapter.release()
         _binding = null
+    }
+
+    /** 圆屏:按栏的垂直位置计算水平安全缩进,让内容不被圆边裁切 */
+    private fun applySafeInset(bar: View) {
+        val inset = RoundInsets.horizontalInsetPx(binding.root, bar.top.toFloat() + bar.height / 2f)
+        val minInset = (6 * resources.displayMetrics.density).toInt()
+        bar.setPadding(inset.coerceAtLeast(minInset), bar.paddingTop, inset.coerceAtLeast(minInset), bar.paddingBottom)
     }
 
     companion object {

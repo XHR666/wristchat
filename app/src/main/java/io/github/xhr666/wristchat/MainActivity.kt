@@ -71,12 +71,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
-        if (CrownScroll.handleGenericMotion(this, ev)) return true
+        val scope = currentPageView() ?: binding.root
+        if (CrownScroll.handleGenericMotion(scope, ev)) return true
         return super.dispatchGenericMotionEvent(ev)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && CrownScroll.handleKey(this, event.keyCode)) return true
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val scope = currentPageView() ?: binding.root
+            if (CrownScroll.handleKey(scope, event.keyCode)) return true
+        }
         return super.dispatchKeyEvent(event)
+    }
+
+    /** 当前页 fragment 的根视图(表冠只滚当前页) */
+    private fun currentPageView(): View? {
+        val adapter = binding.pager.adapter as? PagerAdapter ?: return null
+        return adapter.fragmentAt(binding.pager.currentItem)?.view
     }
 }

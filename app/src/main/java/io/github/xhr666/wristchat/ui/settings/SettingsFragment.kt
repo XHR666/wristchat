@@ -25,6 +25,7 @@ import io.github.xhr666.wristchat.data.SettingsStore
 import io.github.xhr666.wristchat.data.SyncServer
 import io.github.xhr666.wristchat.data.UpdateRepository
 import io.github.xhr666.wristchat.databinding.FragmentSettingsBinding
+import io.github.xhr666.wristchat.ui.common.RoundInsets
 import io.github.xhr666.wristchat.ui.common.ThemeManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -107,6 +108,12 @@ class SettingsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 圆屏安全区:顶部栏动态收窄
+        binding.root.post {
+            val inset = RoundInsets.horizontalInsetPx(binding.root, binding.topBar.top.toFloat() + binding.topBar.height / 2f)
+            val minInset = (6 * resources.displayMetrics.density).toInt()
+            binding.topBar.setPadding(inset.coerceAtLeast(minInset), binding.topBar.paddingTop, inset.coerceAtLeast(minInset), binding.topBar.paddingBottom)
+        }
         adapter = SettingsAdapter(emptyList())
         binding.recycler.layoutManager = LinearLayoutManager(requireContext())
         binding.recycler.adapter = adapter
