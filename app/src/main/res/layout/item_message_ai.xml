@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/tvReasoningHeader"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start"
+        android:background="@drawable/bg_reasoning"
+        android:drawablePadding="4dp"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="4dp"
+        android:text="💭 思考过程 ▸"
+        android:textColor="?attr/wristHint"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/tvReasoningBody"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_reasoning"
+        android:padding="8dp"
+        android:textColor="?attr/wristHint"
+        android:textIsSelectable="true"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/messageHost"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_bubble_ai">
+
+        <TextView
+            android:id="@+id/tvContent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:textColor="?attr/wristText"
+            android:textIsSelectable="true"
+            android:textSize="14sp" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tvMeta"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="?attr/wristHint"
+        android:textSize="10sp" />
+</LinearLayout>

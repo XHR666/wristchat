@@ -86,6 +86,10 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_PASS_HASH, "") ?: ""
         set(v) = prefs.edit().putString(KEY_PASS_HASH, v).apply()
 
+    var passwordSalt: String
+        get() = prefs.getString(KEY_PASS_SALT, "") ?: ""
+        set(v) = prefs.edit().putString(KEY_PASS_SALT, v).apply()
+
     var graceLeft: Int // 剩余免密次数
         get() = prefs.getInt(KEY_GRACE_LEFT, 0)
         set(v) = prefs.edit().putInt(KEY_GRACE_LEFT, v).apply()
@@ -146,6 +150,24 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_SYNC_PIN, "") ?: ""
         set(v) = prefs.edit().putString(KEY_SYNC_PIN, v).apply()
 
+    // ---- 本地记账(余额差值) ----
+    var versionName: String
+        get() = prefs.getString(KEY_VERSION_NAME, "0.1.0") ?: "0.1.0"
+        set(v) = prefs.edit().putString(KEY_VERSION_NAME, v).apply()
+    var ledgerLastBalance: Double?
+        get() = if (prefs.contains(KEY_LEDGER_LAST)) prefs.getFloat(KEY_LEDGER_LAST, 0f).toDouble() else null
+        set(v) = prefs.edit().apply {
+            if (v == null) remove(KEY_LEDGER_LAST) else putFloat(KEY_LEDGER_LAST, v.toFloat())
+        }.apply()
+
+    var ledgerTodayUsage: Double
+        get() = prefs.getFloat(KEY_LEDGER_USAGE, 0f).toDouble()
+        set(v) = prefs.edit().putFloat(KEY_LEDGER_USAGE, v.toFloat()).apply()
+
+    var ledgerDate: String
+        get() = prefs.getString(KEY_LEDGER_DATE, "") ?: ""
+        set(v) = prefs.edit().putString(KEY_LEDGER_DATE, v).apply()
+
     companion object {
         private const val KEY_PROVIDER = "provider"
         private const val KEY_API_KEY = "api_key"
@@ -165,6 +187,7 @@ class SettingsStore(context: Context) {
         private const val KEY_THEME = "theme"
         private const val KEY_PASS_ENABLED = "pass_enabled"
         private const val KEY_PASS_HASH = "pass_hash"
+        private const val KEY_PASS_SALT = "pass_salt"
         private const val KEY_GRACE_LEFT = "grace_left"
         private const val KEY_GRACE_DEFAULT = "grace_default"
         private const val KEY_LOCK_UNTIL = "lock_until"
@@ -177,6 +200,10 @@ class SettingsStore(context: Context) {
         private const val KEY_UPDATE_COOLDOWN = "update_cooldown"
         private const val KEY_QUICK_INPUTS = "quick_inputs"
         private const val KEY_SYNC_PIN = "sync_pin"
+        private const val KEY_LEDGER_LAST = "ledger_last"
+        private const val KEY_LEDGER_USAGE = "ledger_usage"
+        private const val KEY_LEDGER_DATE = "ledger_date"
+        private const val KEY_VERSION_NAME = "version_name"
 
         const val PROVIDER_DEEPSEEK = "deepseek"
         const val PROVIDER_QWEN = "qwen"

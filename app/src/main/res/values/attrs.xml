@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="wristBackground" format="color" />
+    <attr name="wristSurface" format="color" />
+    <attr name="wristText" format="color" />
+    <attr name="wristHint" format="color" />
+    <attr name="wristBubbleUser" format="color" />
+    <attr name="wristBubbleAi" format="color" />
+    <attr name="wristDivider" format="color" />
+</resources>

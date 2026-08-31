@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/wristBackground"
+    android:orientation="vertical">
+
+    <!-- 顶部条:模型名 / 对话详情 / 清空 / 快捷输入 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp">
+
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="聊天"
+            android:textColor="?attr/wristText"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnDetails"
+            style="@style/HeaderIcon"
+            android:text="ⓘ" />
+        <Button
+            android:id="@+id/btnQuick"
+            style="@style/HeaderIcon"
+            android:text="⌨" />
+        <Button
+            android:id="@+id/btnNew"
+            style="@style/HeaderIcon"
+            android:text="⟳" />
+    </LinearLayout>
+
+    <!-- 消息列表 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="4dp"
+        android:scrollbars="none" />
+
+    <!-- 快捷输入面板(默认隐藏) -->
+    <FrameLayout
+        android:id="@+id/quickPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/wristSurface"
+        android:visibility="gone">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/quickList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxHeight="180dp"
+            android:overScrollMode="never"
+            android:scrollbars="none" />
+    </FrameLayout>
+
+    <!-- 输入栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:background="?attr/wristSurface"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="10dp"
+        android:paddingEnd="8dp">
+
+        <EditText
+            android:id="@+id/etInput"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@null"
+            android:hint="输入消息…"
+            android:imeOptions="actionSend"
+            android:inputType="text"
+            android:maxLines="1"
+            android:textColor="?attr/wristText"
+            android:textColorHint="?attr/wristHint"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/btnSend"
+            style="@style/HeaderIcon"
+            android:text="➤" />
+    </LinearLayout>
+</LinearLayout>
