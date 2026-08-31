@@ -56,30 +56,47 @@ class SettingsFragment : Fragment() {
 
     private val importChatLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@registerForActivityResult
-        requireContext().contentResolver.openInputStream(uri)?.use { input ->
+        // 大小限制,防 OOM
+        val size = try {
+            requireContext().contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val idx = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                if (idx >= 0 && c.moveToFirst()) c.getLong(idx) else -1L
+            } ?: -1L
+        } catch (e: Exception) { -1L }
+        if (size > 50L * 1024 * 1024) {
+            Toast.makeText(requireContext(), "文件过大(>50MB),无法导入", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
+        syncScope.launch {
             val name = queryName(uri) ?: "chat.json"
+            val content = withContext(Dispatchers.IO) {
+                requireContext().contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            } ?: return@launch
             val tmp = File(requireContext().cacheDir, "import_$name")
-            tmp.writeBytes(input.readBytes())
-            when (val result = ImportParser.parse(tmp, name)) {
-                is ImportParser.ParseResult.Success -> {
-                    AlertDialog.Builder(requireContext())
-                        .setTitle("导入确认")
-                        .setMessage("将导入 ${result.messages.size} 条消息,标题「${result.title}」")
-                        .setPositiveButton("导入") { _, _ ->
-                            if (vm.importSession(result.messages, result.title)) {
-                                Toast.makeText(requireContext(), "导入成功", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(requireContext(), "导入失败", Toast.LENGTH_SHORT).show()
+            tmp.writeBytes(content)
+            val result = ImportParser.parse(tmp, name)
+            tmp.delete()
+            withContext(Dispatchers.Main) {
+                when (result) {
+                    is ImportParser.ParseResult.Success -> {
+                        AlertDialog.Builder(requireContext())
+                            .setTitle("导入确认")
+                            .setMessage("将导入 ${result.messages.size} 条消息,标题「${result.title}」")
+                            .setPositiveButton("导入") { _, _ ->
+                                if (vm.importSession(result.messages, result.title)) {
+                                    Toast.makeText(requireContext(), "导入成功", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(requireContext(), "导入失败", Toast.LENGTH_SHORT).show()
+                                }
                             }
-                        }
-                        .setNegativeButton("取消", null)
-                        .show()
-                }
-                is ImportParser.ParseResult.Error -> {
-                    Toast.makeText(requireContext(), result.message, Toast.LENGTH_LONG).show()
+                            .setNegativeButton("取消", null)
+                            .show()
+                    }
+                    is ImportParser.ParseResult.Error -> {
+                        Toast.makeText(requireContext(), result.message, Toast.LENGTH_LONG).show()
+                    }
                 }
             }
-            tmp.delete()
         }
     }
 
@@ -320,11 +337,9 @@ class SettingsFragment : Fragment() {
                     rebuildRows()
                 } else {
                     val s = vm.settings
-                    s.passwordHash = AppLockActivity.hash(pin, AppLockActivity.randomSalt())
-                    s.passwordSalt = AppLockActivity.randomSalt()
-                    // 重新用同一 salt 生成 hash
-                    s.passwordSalt = AppLockActivity.randomSalt()
-                    s.passwordHash = AppLockActivity.hash(pin, s.passwordSalt)
+                    val salt = AppLockActivity.randomSalt()
+                    s.passwordSalt = salt
+                    s.passwordHash = AppLockActivity.hash(pin, salt)
                     s.passwordEnabled = true
                     s.graceLeft = s.graceDefault
                     Toast.makeText(requireContext(), "密码已开启", Toast.LENGTH_SHORT).show()
@@ -473,7 +488,14 @@ class SettingsFragment : Fragment() {
             withContext(Dispatchers.Main) {
                 dialog.dismiss()
                 if (ok) {
-                    installApk(target)
+                    // 校验 SHA-256(如 Release 提供)
+                    val hashOk = updateRepo!!.verifySha256(info.sha256, target)
+                    if (hashOk) {
+                        installApk(target)
+                    } else {
+                        target.delete()
+                        Toast.makeText(requireContext(), "下载校验失败,已取消安装", Toast.LENGTH_LONG).show()
+                    }
                 } else {
                     Toast.makeText(requireContext(), "下载失败,请重试", Toast.LENGTH_LONG).show()
                 }

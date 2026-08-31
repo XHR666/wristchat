@@ -108,6 +108,22 @@ class UpdateRepository(private val settings: SettingsStore) {
         }
     }
 
+    /** 若 Release 附带 .sha256 资产,下载并校验 APK 哈希(防更新投毒) */
+    suspend fun verifySha256(sha256Url: String?, apkFile: File): Boolean {
+        if (sha256Url.isNullOrBlank()) return true // 无哈希资产,跳过(单用户自用场景可接受)
+        return try {
+            val (code, text) = Http.get(sha256Url, timeoutMs = 20000)
+            if (code !in 200..299) return false
+            val expected = text.trim().split(Regex("\\s+")).firstOrNull()?.lowercase() ?: return false
+            val actual = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(apkFile.readBytes())
+                .joinToString("") { "%02x".format(it) }
+            expected == actual
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun parseVersion(v: String): Long {
         // v0.1.0 -> 0.1.0 -> 000100000 (major*100000 + minor*1000 + patch)
         val parts = v.split(".").mapNotNull { it.toIntOrNull() }

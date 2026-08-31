@@ -27,6 +27,7 @@ class FullscreenInputActivity : AppCompatActivity() {
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         binding.etFullscreen.setText(intent.getStringExtra("draft") ?: "")
+        binding.etFullscreen.filters = arrayOf(android.text.InputFilter.LengthFilter(8000))
         binding.etFullscreen.requestFocus()
 
         binding.btnSend.setOnClickListener { finishWith(RESULT_SEND) }

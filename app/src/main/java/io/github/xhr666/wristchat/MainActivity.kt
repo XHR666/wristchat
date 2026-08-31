@@ -60,13 +60,10 @@ class MainActivity : AppCompatActivity() {
         val s = settings
         if (!s.passwordEnabled) return
         if (AppLockActivity.unlocked) return
+        if (AppLockActivity.visible) return
         if (s.graceLeft > 0) {
             s.graceLeft = s.graceLeft - 1
             return
-        }
-        val now = System.currentTimeMillis()
-        if (now < s.lockUntil) {
-            // 锁定中:直接进锁页显示倒计时
         }
         val intent = Intent(this, AppLockActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)

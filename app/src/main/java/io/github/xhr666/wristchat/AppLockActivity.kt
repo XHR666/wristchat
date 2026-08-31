@@ -23,6 +23,7 @@ class AppLockActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeManager.apply(this, settings)
         super.onCreate(savedInstanceState)
+        visible = true
         binding = ActivityLockBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.btn0.setOnClickListener { onDigit("0") }
@@ -135,6 +136,12 @@ class AppLockActivity : AppCompatActivity() {
         }.start()
     }
 
+    override fun onDestroy() {
+        visible = false
+        timer?.cancel()
+        super.onDestroy()
+    }
+
     override fun onBackPressed() {
         // 锁定页不允许返回(除 reset 场景)
         moveTaskToBack(true)
@@ -144,6 +151,10 @@ class AppLockActivity : AppCompatActivity() {
         /** 进程内解锁标记:本次启动已验证通过则不再弹锁 */
         @Volatile
         var unlocked: Boolean = false
+
+        /** 锁页是否已在前台(防重复弹锁) */
+        @Volatile
+        var visible: Boolean = false
 
         fun hash(pin: String, salt: String): String {
             val md = MessageDigest.getInstance("SHA-256")
