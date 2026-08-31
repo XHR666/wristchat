@@ -14,7 +14,12 @@ build/
 *.jks
 keystore.properties
 signing.properties
+signing/
 
 # 本地环境
 .env
 *.env
+
+# 构建产物
+*.apk
+*.aab
