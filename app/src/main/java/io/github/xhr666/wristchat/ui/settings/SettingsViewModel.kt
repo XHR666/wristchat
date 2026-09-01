@@ -140,6 +140,32 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    /** 无文件选择器的手表备用通道:扫描 filesDir/import/ 下的聊天文件导入 */
+    fun importFromFolder(): List<String> {
+        val dir = File(getApplication<Application>().filesDir, "import").apply { mkdirs() }
+        val imported = mutableListOf<String>()
+        dir.listFiles()?.filter { it.isFile && it.name.endsWith(".json", ignoreCase = true) || it.isFile && it.name.endsWith(".txt", ignoreCase = true) }
+            ?.forEach { f ->
+                when (val r = io.github.xhr666.wristchat.data.ImportParser.parse(f, f.name)) {
+                    is io.github.xhr666.wristchat.data.ImportParser.ParseResult.Success -> {
+                        if (importSession(r.messages, r.title)) imported.add(f.name)
+                        f.delete()
+                    }
+                    else -> {}
+                }
+            }
+        refreshSizes()
+        return imported
+    }
+
+    fun importFromText(text: String, name: String): String {
+        return when (val r = io.github.xhr666.wristchat.data.ImportParser.parseString(text, name)) {
+            is io.github.xhr666.wristchat.data.ImportParser.ParseResult.Success ->
+                if (importSession(r.messages, r.title)) "已导入「${r.title}」(${r.messages.size} 条)" else "导入失败"
+            is io.github.xhr666.wristchat.data.ImportParser.ParseResult.Error -> r.message
+        }
+    }
+
     fun human(bytes: Long): String = when {
         bytes > 1024 * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
         bytes > 1024 -> "%.1f KB".format(bytes / 1024.0)

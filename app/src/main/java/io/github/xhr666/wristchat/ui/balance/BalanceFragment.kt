@@ -25,7 +25,7 @@ class BalanceFragment : Fragment() {
         // 圆屏安全区:顶部栏动态收窄
         binding.root.post {
             val inset = RoundInsets.horizontalInsetPx(binding.root, binding.topBar.top.toFloat() + binding.topBar.height / 2f)
-            val minInset = (6 * resources.displayMetrics.density).toInt()
+            val minInset = (10 * resources.displayMetrics.density).toInt()
             binding.topBar.setPadding(inset.coerceAtLeast(minInset), binding.topBar.paddingTop, inset.coerceAtLeast(minInset), binding.topBar.paddingBottom)
         }
         binding.btnRefresh.setOnClickListener { vm.refresh() }

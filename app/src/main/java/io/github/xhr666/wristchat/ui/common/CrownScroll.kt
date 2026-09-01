@@ -26,7 +26,8 @@ object CrownScroll {
 
     fun handleGenericMotion(rootScope: View, ev: MotionEvent): Boolean {
         if (ev.action != MotionEvent.ACTION_SCROLL) return false
-        val raw = ev.getAxisValue(MotionEvent.AXIS_VSCROLL) * sensitivity
+        // 方向:表冠"向下"≈ 手指向下滑 = 内容向上移动(用户实测反馈反转,已修正)
+        val raw = -ev.getAxisValue(MotionEvent.AXIS_VSCROLL) * sensitivity
         if (abs(raw) < 0.05f) return false
         val target = findScrollable(rootScope)
         if (target == null) return false

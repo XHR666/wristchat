@@ -38,7 +38,7 @@ class SettingsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.root.post {
             val inset = RoundInsets.horizontalInsetPx(binding.root, binding.topBar.top.toFloat() + binding.topBar.height / 2f)
-            val minInset = (6 * resources.displayMetrics.density).toInt()
+            val minInset = (10 * resources.displayMetrics.density).toInt()
             binding.topBar.setPadding(inset.coerceAtLeast(minInset), binding.topBar.paddingTop, inset.coerceAtLeast(minInset), binding.topBar.paddingBottom)
         }
         adapter = SettingsAdapter(emptyList())
@@ -70,9 +70,9 @@ class SettingsFragment : Fragment() {
     }
 
     private fun menu(title: String, value: String, category: String): SettingRow =
-        SettingRow(SettingRow.VALUE, title, value) {
+        SettingRow(SettingRow.VALUE, title, value, onClick = {
             startActivity(Intent(requireContext(), CategoryActivity::class.java).putExtra(CategoryActivity.EXTRA_CATEGORY, category))
-        }
+        })
 
     private fun autoCheckUpdate() {
         val s = vm.settings

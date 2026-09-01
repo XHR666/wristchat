@@ -147,6 +147,9 @@ button:active{opacity:.8}
 <label>技能文件名(可选)</label><input id="skillName" placeholder="myskill.md">
 <h2>快捷输入(每行一条)</h2>
 <textarea id="quickInputs" rows="4"></textarea>
+<h2>导入聊天记录(备用通道)</h2>
+<label>粘贴聊天 JSON / 文本(user:/assistant: 前缀),留空跳过</label>
+<textarea id="chatImport" rows="4" placeholder='{"messages":[{"role":"user","content":"hi"}]}'></textarea>
 <button onclick="save()">保存到手表</button>
 <div id="msg"></div>
 </div>
@@ -188,7 +191,8 @@ function save(){
     quickInputs:document.getElementById('quickInputs').value.split('\n').map(s=>s.trim()).filter(Boolean),
     apiKey:document.getElementById('apiKey').value.trim(),
     skillName:document.getElementById('skillName').value.trim(),
-    skillContent:document.getElementById('skillContent').value
+    skillContent:document.getElementById('skillContent').value,
+    chatImport:document.getElementById('chatImport').value
   };
   fetch('/api/save?pin='+CUR_PIN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(r=>r.json()).then(j=>{show(j.ok?('已保存: '+j.message):(j.error||'保存失败'),j.ok?'ok':'err')})

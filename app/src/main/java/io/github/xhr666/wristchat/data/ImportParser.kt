@@ -18,7 +18,19 @@ object ImportParser {
             val text = file.readText(Charsets.UTF_8)
             when {
                 fileName.endsWith(".zip") -> parseChatboxZip(file)
-                text.trimStart().startsWith("{") || text.trimStart().startsWith("[") -> parseJson(text)
+                else -> parseString(text, fileName)
+            }
+        } catch (e: Exception) {
+            ParseResult.Error("解析失败:${e.message}")
+        }
+    }
+
+    /** 直接解析字符串(手机同步粘贴导入用) */
+    fun parseString(text: String, fileName: String): ParseResult {
+        return try {
+            val trimmed = text.trim()
+            when {
+                trimmed.startsWith("{") || trimmed.startsWith("[") -> parseJson(text)
                 else -> parsePlainText(text)
             }
         } catch (e: Exception) {

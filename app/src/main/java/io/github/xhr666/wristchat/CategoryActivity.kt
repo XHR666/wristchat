@@ -106,7 +106,7 @@ class CategoryActivity : AppCompatActivity() {
 
         binding.root.post {
             val inset = RoundInsets.horizontalInsetPx(binding.root, binding.topBar.top.toFloat() + binding.topBar.height / 2f)
-            val minInset = (6 * resources.displayMetrics.density).toInt()
+            val minInset = (10 * resources.displayMetrics.density).toInt()
             binding.topBar.setPadding(inset.coerceAtLeast(minInset), binding.topBar.paddingTop, inset.coerceAtLeast(minInset), binding.topBar.paddingBottom)
         }
         binding.btnBack.setOnClickListener { finish() }
@@ -203,7 +203,12 @@ class CategoryActivity : AppCompatActivity() {
             }
             CAT_SESSIONS -> {
                 rows += row("会话列表(点击删除)", "${vm.sessionStore.list().size} 个 · ${vm.sessionsSize.value}") { manageSessions() }
-                rows += row("导入聊天记录", "JSON / chatbox / 文本") { importChatLauncher.launch(arrayOf("*/*")) }
+                rows += row("导入聊天记录(文件)", "JSON / chatbox / 文本") { importChatLauncher.launch(arrayOf("*/*")) }
+                rows += row("扫描导入文件夹", "filesDir/import/(无文件选择器备用)") {
+                    val imported = vm.importFromFolder()
+                    toast(if (imported.isEmpty()) "未发现可导入文件(请先放入 filesDir/import/)" else "已导入:${imported.joinToString()}")
+                }
+                rows += row("手机同步粘贴导入", "手机同步页粘贴聊天 JSON 后保存") { importFromWebPaste() }
             }
             CAT_STORAGE -> {
                 rows += row("缓存详情", vm.cacheInfo.value ?: "") { vm.refreshSizes(); rebuild() }
@@ -328,6 +333,25 @@ class CategoryActivity : AppCompatActivity() {
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton("确定") { _, _ -> onOk() }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 无文件选择器备用:在手表上直接粘贴聊天 JSON 导入 */
+    private fun importFromWebPaste() {
+        val et = EditText(this).apply {
+            gravity = Gravity.TOP
+            minLines = 6
+            hint = "粘贴聊天记录 JSON/文本(user:/assistant: 前缀)"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("粘贴导入")
+            .setView(et)
+            .setPositiveButton("导入") { _, _ ->
+                val text = et.text.toString().trim()
+                if (text.isEmpty()) { toast("内容为空"); return@setPositiveButton }
+                toast(vm.importFromText(text, "paste.json"))
+            }
             .setNegativeButton("取消", null)
             .show()
     }
@@ -556,6 +580,12 @@ class CategoryActivity : AppCompatActivity() {
             o.optString("apiKey").takeIf { it.isNotBlank() }?.let { s.apiKey = it }
             val skillName = o.optString("skillName"); val skillContent = o.optString("skillContent")
             if (skillContent.isNotBlank()) vm.importSkill(skillName.ifBlank { "web_import.md" }, skillContent)
+            // 聊天记录粘贴导入(手机同步页)
+            val chatImport = o.optString("chatImport")
+            if (chatImport.isNotBlank()) {
+                val r = vm.importFromText(chatImport, "web_chat.json")
+                return if (r.startsWith("已导入")) "已保存;$r" else "已保存(聊天导入失败:$r)"
+            }
             rebuild()
             "已保存"
         } catch (e: Exception) { "保存失败:${e.message}" }

@@ -147,7 +147,7 @@ class ChatFragment : Fragment() {
     /** 圆屏:按栏的垂直位置计算水平安全缩进,让内容不被圆边裁切 */
     private fun applySafeInset(bar: View) {
         val inset = RoundInsets.horizontalInsetPx(binding.root, bar.top.toFloat() + bar.height / 2f)
-        val minInset = (6 * resources.displayMetrics.density).toInt()
+        val minInset = (10 * resources.displayMetrics.density).toInt()
         bar.setPadding(inset.coerceAtLeast(minInset), bar.paddingTop, inset.coerceAtLeast(minInset), bar.paddingBottom)
     }
 
