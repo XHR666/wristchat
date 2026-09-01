@@ -11,9 +11,9 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModelProvider
@@ -26,7 +26,10 @@ import io.github.xhr666.wristchat.data.SyncServer
 import io.github.xhr666.wristchat.data.UpdateRepository
 import io.github.xhr666.wristchat.data.UpdateResult
 import io.github.xhr666.wristchat.databinding.ActivityCategoryBinding
+import android.widget.ImageView
+import io.github.xhr666.wristchat.ui.common.QrUtil
 import io.github.xhr666.wristchat.ui.common.RoundInsets
+import io.github.xhr666.wristchat.ui.common.WristDialog
 import io.github.xhr666.wristchat.ui.common.ThemeManager
 import io.github.xhr666.wristchat.ui.settings.SettingRow
 import io.github.xhr666.wristchat.ui.settings.SettingsAdapter
@@ -225,7 +228,12 @@ class CategoryActivity : AppCompatActivity() {
             }
             CAT_UPDATE -> {
                 rows += row("检查更新", "") { checkUpdate(manual = true) }
-                rows += row("手机同步", "") { startSync() }
+                if (syncServer != null) {
+                    rows += row("手机同步", syncStatusText()) { startSync() }
+                    rows += row("停止同步", "") { stopSync() }
+                } else {
+                    rows += row("手机同步", "未开启") { startSync() }
+                }
                 rows += row("仓库", "${s.repoOwner}/${s.repoName}") {
                     editText("仓库(owner/repo)", "${s.repoOwner}/${s.repoName}") { input ->
                         val parts = input.split("/")
@@ -280,10 +288,7 @@ class CategoryActivity : AppCompatActivity() {
 
     // ---------- 通用对话框 ----------
     private fun singleChoice(title: String, items: List<String>, checked: Int, onPick: (Int) -> Unit) {
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setSingleChoiceItems(items.toTypedArray(), checked) { d, which -> onPick(which); d.dismiss() }
-            .show()
+        WristDialog.singleChoice(this, title, items, checked, onPick)
     }
 
     private fun editText(title: String, initial: String, password: Boolean = false, onSave: (String) -> Unit) {
@@ -292,11 +297,11 @@ class CategoryActivity : AppCompatActivity() {
             if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             filters = arrayOf(InputFilter.LengthFilter(4000))
         }
-        AlertDialog.Builder(this)
+        WristDialog.build(this)
             .setTitle(title)
             .setView(et)
-            .setPositiveButton("保存") { _, _ -> onSave(et.text.toString()) }
-            .setNegativeButton("取消", null)
+            .setPositive("保存") { onSave(et.text.toString()) }
+            .setNegative("取消", null)
             .show()
     }
 
@@ -305,14 +310,14 @@ class CategoryActivity : AppCompatActivity() {
             setText(if (initial % 1f == 0f) initial.toInt().toString() else initial.toString())
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
-        AlertDialog.Builder(this)
+        WristDialog.build(this)
             .setTitle(title)
             .setView(et)
-            .setPositiveButton("保存") { _, _ ->
+            .setPositive("保存") {
                 val v = et.text.toString().toFloatOrNull()
                 if (v == null || v < min || v > max) toast("无效输入") else onSave(v)
             }
-            .setNegativeButton("取消", null)
+            .setNegative("取消", null)
             .show()
     }
 
@@ -320,20 +325,20 @@ class CategoryActivity : AppCompatActivity() {
         val et = EditText(this).apply {
             setText(initial); gravity = Gravity.TOP; minLines = 4
         }
-        AlertDialog.Builder(this)
+        WristDialog.build(this)
             .setTitle(title)
             .setView(et)
-            .setPositiveButton("保存") { _, _ -> onSave(et.text.toString()) }
-            .setNegativeButton("取消", null)
+            .setPositive("保存") { onSave(et.text.toString()) }
+            .setNegative("取消", null)
             .show()
     }
 
     private fun confirm(title: String, message: String, onOk: () -> Unit) {
-        AlertDialog.Builder(this)
+        WristDialog.build(this)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton("确定") { _, _ -> onOk() }
-            .setNegativeButton("取消", null)
+            .setPositive("确定", onOk)
+            .setNegative("取消", null)
             .show()
     }
 
@@ -344,15 +349,14 @@ class CategoryActivity : AppCompatActivity() {
             minLines = 6
             hint = "粘贴聊天记录 JSON/文本(user:/assistant: 前缀)"
         }
-        AlertDialog.Builder(this)
+        WristDialog.build(this)
             .setTitle("粘贴导入")
             .setView(et)
-            .setPositiveButton("导入") { _, _ ->
+            .setPositive("导入") {
                 val text = et.text.toString().trim()
-                if (text.isEmpty()) { toast("内容为空"); return@setPositiveButton }
-                toast(vm.importFromText(text, "paste.json"))
+                if (text.isEmpty()) { toast("内容为空") } else toast(vm.importFromText(text, "paste.json"))
             }
-            .setNegativeButton("取消", null)
+            .setNegative("取消", null)
             .show()
     }
 
@@ -362,10 +366,10 @@ class CategoryActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
             hint = "4 位数字"
         }
-        AlertDialog.Builder(this)
+        WristDialog.build(this)
             .setTitle("设置密码")
             .setView(et)
-            .setPositiveButton("开启") { _, _ ->
+            .setPositive("开启") {
                 val pin = et.text.toString()
                 if (pin.length != 4 || !pin.all { it.isDigit() }) {
                     toast("需为 4 位数字")
@@ -380,7 +384,7 @@ class CategoryActivity : AppCompatActivity() {
                 }
                 rebuild()
             }
-            .setNegativeButton("取消") { _, _ -> rebuild() }
+            .setNegative("取消") { rebuild() }
             .show()
     }
 
@@ -394,60 +398,52 @@ class CategoryActivity : AppCompatActivity() {
             setText(settings.getQuickInputs().joinToString("\n"))
             gravity = Gravity.TOP; minLines = 5; hint = "每行一条"
         }
-        AlertDialog.Builder(this)
+        WristDialog.build(this)
             .setTitle("快捷输入(每行一条)")
             .setView(et)
-            .setPositiveButton("保存") { _, _ ->
+            .setPositive("保存") {
                 settings.setQuickInputs(et.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() })
                 rebuild()
             }
-            .setNegativeButton("取消", null)
+            .setNegative("取消", null)
             .show()
     }
 
     private fun manageSkills() {
         val skills = vm.skillStore.scan()
         if (skills.isEmpty()) { toast("暂无技能"); return }
-        val names = skills.map { "${if (it.enabled) "✓" else "○"} ${it.name}" }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("技能(点击切换启用)")
-            .setItems(names) { _, which ->
-                val skill = skills[which]
-                vm.setSkillEnabled(skill.fileName, !skill.enabled)
+        val names = skills.map { "${if (it.enabled) "✓" else "○"} ${it.name}" }.toList()
+        WristDialog.items(this, "技能(点击切换)", names, { which ->
+            val skill = skills[which]
+            vm.setSkillEnabled(skill.fileName, !skill.enabled)
+            rebuild()
+        }, neutralText = "删除") {
+            val names2 = skills.map { it.name }
+            WristDialog.items(this, "选择要删除的技能", names2, onPick = { which ->
+                vm.deleteSkill(skills[which].fileName)
                 rebuild()
-            }
-            .setNeutralButton("删除") { _, _ ->
-                val names2 = skills.map { it.name }.toTypedArray()
-                AlertDialog.Builder(this)
-                    .setTitle("选择要删除的技能")
-                    .setItems(names2) { _, which -> vm.deleteSkill(skills[which].fileName); rebuild() }
-                    .show()
-            }
-            .setNegativeButton("关闭", null)
-            .show()
+            })
+        }
     }
 
     private fun manageMemories() {
         val memories = vm.memoryStore.list()
         if (memories.isEmpty()) { toast("暂无记忆"); return }
-        val names = memories.map { "${it.id}: ${it.content.take(30)}" }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("记忆(点击删除)")
-            .setItems(names) { _, which -> vm.deleteMemory(memories[which].id); rebuild() }
-            .setNeutralButton("清空") { _, _ -> vm.clearMemories(); rebuild() }
-            .setNegativeButton("关闭", null)
-            .show()
+        val names = memories.map { "${it.id}: ${it.content.take(30)}" }.toList()
+        WristDialog.items(this, "记忆(点击删除)", names, onPick = { which ->
+            vm.deleteMemory(memories[which].id); rebuild()
+        }, neutralText = "清空", onNeutral = {
+            vm.clearMemories(); rebuild()
+        })
     }
 
     private fun manageSessions() {
         val sessions = vm.sessionStore.list()
         if (sessions.isEmpty()) { toast("暂无会话"); return }
-        val names = sessions.map { "${it.title.take(12)} · ${it.messages.size}条" }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("会话(点击删除)")
-            .setItems(names) { _, which -> vm.deleteSession(sessions[which].id); rebuild() }
-            .setNegativeButton("关闭", null)
-            .show()
+        val names = sessions.map { "${it.title.take(12)} · ${it.messages.size}条" }.toList()
+        WristDialog.items(this, "会话(点击删除)", names, onPick = { which ->
+            vm.deleteSession(sessions[which].id); rebuild()
+        })
     }
 
     // ---------- 更新 ----------
@@ -469,22 +465,33 @@ class CategoryActivity : AppCompatActivity() {
     }
 
     private fun promptUpdate(info: ReleaseInfo) {
-        AlertDialog.Builder(this)
+        WristDialog.build(this)
             .setTitle("发现新版本 ${info.tagName}")
             .setMessage("当前版本:${settings.versionName}\n${info.body.take(200)}")
-            .setPositiveButton("下载更新") { _, _ -> downloadAndInstall(info) }
-            .setNegativeButton("取消", null)
+            .setPositive("下载更新") { downloadAndInstall(info) }
+            .setNegative("取消", null)
             .show()
     }
 
     private fun downloadAndInstall(info: ReleaseInfo) {
         val url = info.apkUrl ?: return
         val target = File(cacheDir, info.apkName ?: "update.apk")
-        val dialog = AlertDialog.Builder(this).setTitle("下载中…").setMessage("0%").setCancelable(false).show()
+        val progressText = TextView(this).apply {
+            setTextColor(textColorAttr())
+            textSize = 14f
+            gravity = Gravity.CENTER
+            text = "0%"
+        }
+        val dialog = WristDialog.build(this)
+            .setTitle("下载中…")
+            .hidePositive().hideNegative()
+            .setCancelable(false)
+            .setView(progressText)
+        dialog.show()
         scope.launch {
             val ok = updateRepo!!.download(url, target) { done, total ->
                 val pct = if (total > 0) (done * 100 / total).toInt() else -1
-                runOnUiThread { dialog.setMessage(if (pct >= 0) "$pct%" else "已下载 ${done / 1024}KB") }
+                runOnUiThread { progressText.text = if (pct >= 0) "$pct%" else "已下载 ${done / 1024}KB" }
             }
             runOnUiThread {
                 dialog.dismiss()
@@ -537,17 +544,51 @@ class CategoryActivity : AppCompatActivity() {
         syncServer = server
         val ip = server.localIp() ?: "未知"
         val url = "http://$ip:${server.port}"
-        AlertDialog.Builder(this)
+
+        // 二维码 + 地址 + PIN(关闭弹窗不停服务,离开本页才停)
+        val column = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val qrSize = (150 * resources.displayMetrics.density).toInt()
+        val qr = ImageView(this).apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(qrSize, qrSize)
+            setImageBitmap(QrUtil.generate(url, qrSize))
+        }
+        column.addView(qr)
+        column.addView(TextView(this).apply {
+            text = url
+            setTextColor(textColorAttr()); textSize = 11f; gravity = Gravity.CENTER
+        })
+        column.addView(TextView(this).apply {
+            text = "密钥:${s.syncPin}(手机需先输入才能操作)"
+            setTextColor(textColorAttr()); textSize = 12f; gravity = Gravity.CENTER
+        })
+
+        val d = WristDialog.build(this)
             .setTitle("手机同步已开启")
-            .setMessage("手机连接同一网络后,浏览器打开:\n$url\n\nPIN:${s.syncPin}\n\n3 分钟无操作自动关闭")
-            .setPositiveButton("复制地址") { _, _ ->
+            .setView(column)
+            .setPositive("复制") {
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("sync", "$url\nPIN:${s.syncPin}"))
                 toast("已复制")
             }
-            .setNegativeButton("关闭", null)
-            .setOnDismissListener { syncServer?.stop(); syncServer = null }
-            .show()
+            .setNegative("关闭", null)  // 仅关弹窗,服务继续(离开本页自动停)
+        d.show()
+        rebuild()
+    }
+
+    private fun stopSync() {
+        syncServer?.stop()
+        syncServer = null
+        rebuild()
+    }
+
+    private fun syncStatusText(): String {
+        val s = syncServer
+        if (s == null) return "未开启"
+        val ip = s.localIp() ?: "?"
+        return "运行中 http://$ip:${s.port} · PIN:${settings.syncPin}"
     }
 
     private fun configJson(): String {
@@ -603,6 +644,12 @@ class CategoryActivity : AppCompatActivity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    private fun textColorAttr(): Int {
+        val tv = android.util.TypedValue()
+        theme.resolveAttribute(io.github.xhr666.wristchat.R.attr.wristText, tv, true)
+        return tv.data
+    }
 
     override fun onDestroy() {
         syncServer?.stop()

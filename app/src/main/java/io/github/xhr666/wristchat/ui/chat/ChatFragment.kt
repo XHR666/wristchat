@@ -6,7 +6,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -14,6 +13,7 @@ import io.github.xhr666.wristchat.FullscreenInputActivity
 import io.github.xhr666.wristchat.R
 import io.github.xhr666.wristchat.databinding.FragmentChatBinding
 import io.github.xhr666.wristchat.ui.common.RoundInsets
+import io.github.xhr666.wristchat.ui.common.WristDialog
 
 class ChatFragment : Fragment() {
 
@@ -100,11 +100,11 @@ class ChatFragment : Fragment() {
     }
 
     private fun confirmNewSession() {
-        AlertDialog.Builder(requireContext())
+        WristDialog.build(requireContext())
             .setTitle("新会话")
             .setMessage("开始新会话?当前对话保留在历史中")
-            .setPositiveButton("确定") { _, _ -> vm.newSession() }
-            .setNegativeButton("取消", null)
+            .setPositive("确定") { vm.newSession() }
+            .setNegative("取消", null)
             .show()
     }
 
@@ -119,10 +119,11 @@ class ChatFragment : Fragment() {
             append("消耗余额:¥${"%.4f".format(d.totalCost)}\n")
             append("已压缩消息:${d.compressed}")
         }
-        AlertDialog.Builder(requireContext())
+        WristDialog.build(requireContext())
             .setTitle("对话详情")
             .setMessage(msg)
-            .setPositiveButton("关闭", null)
+            .setPositive("关闭", null)
+            .hideNegative()
             .show()
     }
 

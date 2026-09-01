@@ -80,9 +80,10 @@ class SyncServer(
                 path.startsWith("/api/save") -> handleSave(path, body)
                 else -> handleHtml()
             }
+            val contentType = if (path.startsWith("/api/")) "application/json; charset=utf-8" else "text/html; charset=utf-8"
             val out = socket.getOutputStream()
             val bytes = response.toByteArray(Charsets.UTF_8)
-            out.write("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n".toByteArray())
+            out.write("HTTP/1.1 200 OK\r\nContent-Type: $contentType\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n".toByteArray())
             out.write(bytes)
             out.flush()
         } catch (e: Exception) {
@@ -127,7 +128,8 @@ button:active{opacity:.8}
 .pinbox{display:flex;gap:8px}.pinbox input{flex:1}
 </style></head><body>
 <h1>🖐 WristChat 手机同步</h1>
-<div class="pinbox"><input id="pin" type="password" placeholder="4 位 PIN" inputmode="numeric"><button onclick="load()" style="margin-top:0">连接</button></div>
+<div class="pinbox"><input id="pin" type="password" placeholder="输入手表上显示的 4 位密钥" inputmode="numeric"><button onclick="load()" style="margin-top:0">连接</button></div>
+<p style="color:#9aa4af;font-size:12px">先输入密钥才能查看和修改设置</p>
 <div id="form" style="display:none">
 <h2>对话参数</h2>
 <label>温度 (0-2)</label><input id="temperature" type="number" step="0.1" min="0" max="2">
