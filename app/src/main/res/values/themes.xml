@@ -11,6 +11,7 @@
         <item name="colorAccent">@color/accent</item>
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:textColor">@color/text_light</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.AppCompat.Dialog.Alert</item>
         <item name="wristBackground">@color/bg_light</item>
         <item name="wristSurface">@color/surface_light</item>
         <item name="wristText">@color/text_light</item>
@@ -32,6 +33,7 @@
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:textColor">@color/text_dark</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.AppCompat.Dialog.Alert</item>
         <item name="wristBackground">@color/bg_dark</item>
         <item name="wristSurface">@color/surface_dark</item>
         <item name="wristText">@color/text_dark</item>
@@ -53,6 +55,7 @@
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:textColor">@color/text_dark</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.AppCompat.Dialog.Alert</item>
         <item name="wristBackground">@color/bg_amoled</item>
         <item name="wristSurface">@color/surface_amoled</item>
         <item name="wristText">@color/text_dark</item>

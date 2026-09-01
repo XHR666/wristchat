@@ -71,15 +71,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
-        val scope = currentPageView() ?: binding.root
-        if (CrownScroll.handleGenericMotion(scope, ev)) return true
+        // 表冠旋转事件一律消费,绝不落到框架层(部分手表会把手势转成点击,导致误触发开关/弹窗)
+        if (ev.action == MotionEvent.ACTION_SCROLL) {
+            val scope = currentPageView() ?: binding.root
+            CrownScroll.handleGenericMotion(scope, ev)
+            return true
+        }
         return super.dispatchGenericMotionEvent(ev)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
-            val scope = currentPageView() ?: binding.root
-            if (CrownScroll.handleKey(scope, event.keyCode)) return true
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN,
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    val scope = currentPageView() ?: binding.root
+                    CrownScroll.handleKey(scope, event.keyCode)
+                    return true
+                }
+            }
         }
         return super.dispatchKeyEvent(event)
     }

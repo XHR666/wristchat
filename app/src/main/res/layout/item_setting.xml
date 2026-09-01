@@ -3,8 +3,11 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="?attr/wristBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     android:gravity="center_vertical"
-    android:minHeight="50dp"
+    android:minHeight="52dp"
     android:orientation="horizontal"
     android:paddingStart="16dp"
     android:paddingEnd="16dp">
@@ -23,7 +26,7 @@
         android:layout_height="wrap_content"
         android:gravity="end"
         android:textColor="?attr/wristHint"
-        android:textSize="13sp" />
+        android:textSize="12sp" />
 
     <Switch
         android:id="@+id/switchValue"
