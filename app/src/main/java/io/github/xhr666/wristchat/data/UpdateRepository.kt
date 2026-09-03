@@ -1,5 +1,6 @@
 package io.github.xhr666.wristchat.data
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
@@ -26,7 +27,8 @@ class UpdateRepository(private val settings: SettingsStore) {
         val owner = settings.repoOwner
         val repo = settings.repoName
         if (owner.isBlank() || repo.isBlank()) return UpdateResult.Error("未配置仓库")
-        val url = "https://api.github.com/repos/$owner/$repo/releases/latest"
+        // 拉 releases 列表(含 prerelease,测试版也能检测),取语义版本最高的
+        val url = "https://api.github.com/repos/$owner/$repo/releases?per_page=20"
         val (code, text) = try {
             Http.get(url, timeoutMs = 20000)
         } catch (e: Exception) {
@@ -34,11 +36,21 @@ class UpdateRepository(private val settings: SettingsStore) {
         }
         if (code == 404) return UpdateResult.Error("仓库或 Release 不存在")
         if (code !in 200..299) return UpdateResult.Error("检查失败(HTTP $code)")
-        val root = try { JSONObject(text) } catch (e: Exception) { return UpdateResult.Error("响应解析失败") }
+        val arr = try { JSONArray(text) } catch (e: Exception) { return UpdateResult.Error("响应解析失败") }
+        if (arr.length() == 0) return UpdateResult.UpToDate("无发布")
+
+        val currentKey = versionKey(settings.versionName)
+        var best: JSONObject? = null
+        var bestKey = 0L
+        for (i in 0 until arr.length()) {
+            val rel = arr.optJSONObject(i) ?: continue
+            val key = versionKey(rel.optString("tag_name", "").removePrefix("v"))
+            if (key > bestKey && key > currentKey) { bestKey = key; best = rel }
+        }
+        if (best == null) return UpdateResult.UpToDate("已是最新")
+
+        val root = best!!
         val tag = root.optString("tag_name", "").removePrefix("v")
-        val remoteVersion = parseVersion(tag)
-        val current = parseVersion(settings.versionName)
-        if (remoteVersion <= current) return UpdateResult.UpToDate(tag.ifBlank { "同版本" })
 
         // 必须有 APK 资产才算真更新
         val assets = root.optJSONArray("assets")
@@ -72,7 +84,7 @@ class UpdateRepository(private val settings: SettingsStore) {
         return UpdateResult.Found(
             ReleaseInfo(
                 tagName = root.optString("tag_name", tag),
-                versionCode = remoteVersion,
+                versionCode = bestKey,
                 apkUrl = apkUrl,
                 apkName = apkName,
                 sha256 = sha,
@@ -124,13 +136,15 @@ class UpdateRepository(private val settings: SettingsStore) {
         }
     }
 
-    private fun parseVersion(v: String): Long {
-        // v0.1.0 -> 0.1.0 -> 000100000 (major*100000 + minor*1000 + patch)
-        val parts = v.split(".").mapNotNull { it.toIntOrNull() }
-        if (parts.isEmpty()) return 0
-        val major = parts.getOrElse(0) { 0 }
-        val minor = parts.getOrElse(1) { 0 }
-        val patch = parts.getOrElse(2) { 0 }
-        return major * 1_000_000L + minor * 1_000L + patch
+    /** 语义版本比较键:主.次.修 ×1000 + 预发布(正式版+1000,-rcN 按序号) */
+    private fun versionKey(v: String): Long {
+        val core = v.substringBefore('-').split(".").mapNotNull { it.toIntOrNull() }
+        val major = core.getOrElse(0) { 0 }
+        val minor = core.getOrElse(1) { 0 }
+        val patch = core.getOrElse(2) { 0 }
+        val base = major * 1_000_000_000L + minor * 1_000_000L + patch * 1_000L
+        val pre = v.substringAfter('-', "").takeIf { it.isNotBlank() } ?: return base + 1_000L // 正式 > 同版 rc
+        val n = Regex("rc(\\d+)").find(pre)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        return base + n.coerceIn(0, 999)
     }
 }
