@@ -168,4 +168,17 @@ class SessionStore(private val context: Context) {
         s.title = title
         save(s)
     }
+
+    /** 仅累计用量/费用(自动标题等不产生消息的请求),计入会话统计 */
+    fun addUsageOnly(s: Session, usage: TokenUsage?, cost: Double) {
+        usage?.let { u ->
+            s.totalTokens += u.totalTokens
+            s.totalCacheHit += u.cacheHit
+            s.totalCacheMiss += u.cacheMiss
+            s.totalCompletionTokens += u.completionTokens
+            s.totalRequests += 1
+        }
+        s.totalCost += cost
+        save(s)
+    }
 }

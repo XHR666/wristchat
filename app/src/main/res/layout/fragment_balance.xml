@@ -5,11 +5,19 @@
     android:background="?attr/wristBackground"
     android:orientation="vertical">
 
+    <io.github.xhr666.wristchat.ui.common.TimeCapsuleView
+        android:id="@+id/timeCapsule"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="2dp"
+        android:visibility="invisible" />
+
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="44dp"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="24dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="8dp"
@@ -37,12 +45,18 @@
             android:text="⟳" />
     </LinearLayout>
 
-    <androidx.core.widget.NestedScrollView
+    <io.github.xhr666.wristchat.ui.common.ScrollIndicatorLayout
+        android:id="@+id/indicatorWrap"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:fillViewport="true"
-        android:scrollbars="none">
+        android:layout_weight="1">
+
+        <androidx.core.widget.NestedScrollView
+            android:id="@+id/scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:scrollbars="none">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -168,5 +182,6 @@
                 android:textColor="?attr/wristHint"
                 android:textSize="12sp" />
         </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
+        </androidx.core.widget.NestedScrollView>
+    </io.github.xhr666.wristchat.ui.common.ScrollIndicatorLayout>
 </LinearLayout>

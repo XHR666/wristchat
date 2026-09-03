@@ -98,4 +98,11 @@
         <item name="android:textColor">@color/accent</item>
         <item name="android:background">?attr/selectableItemBackground</item>
     </style>
+
+    <!-- 启动主题:纯黑,避免亮色启动窗口白屏;进入后 Activity 再切用户主题 -->
+    <style name="Theme.WristChat.Splash" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg_amoled</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

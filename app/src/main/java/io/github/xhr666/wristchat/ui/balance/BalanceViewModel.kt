@@ -56,11 +56,9 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
             val supports = settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
             val peak = Pricing.isPeak(System.currentTimeMillis() / 1000)
             val peakLabel = if (peak) {
-                val remain = nextSwitchSeconds()
-                "🌞 高峰时段(约剩 ${fmtRemain(remain)})"
+                "🌞 高峰时段(北京时间)\n距高峰结束:${fmtRemain(nextSwitchSeconds())}"
             } else {
-                val remain = nextSwitchSeconds()
-                "🌙 空闲时段(约剩 ${fmtRemain(remain)})"
+                "🌙 空闲时段(北京时间)\n距下一高峰开始:${fmtRemain(nextSwitchSeconds())}"
             }
 
             val appTotal = sessionStore.list().sumOf { it.totalCost }

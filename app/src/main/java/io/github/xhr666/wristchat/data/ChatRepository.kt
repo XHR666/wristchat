@@ -269,6 +269,48 @@ class ChatRepository(
                 ?.optJSONObject("message")?.optString("content") ?: ""
         } catch (e: Exception) { "" }
     }
+
+    /** 会话标题生成:用当前模型概括对话主题(短请求,thinking 关) */
+    suspend fun genTitle(firstUser: String, firstReply: String): Pair<String, TokenUsage?> {
+        val provider = Providers.resolve(settings)
+        val key = settings.apiKey
+        if (key.isBlank()) return "" to null
+        val body = JSONObject().apply {
+            put("model", settings.model)
+            put("messages", JSONArray().apply {
+                put(JSONObject().put("role", "system").put("content",
+                    "你是会话标题生成器。根据下面这段对话的开头,用不超过12个字的中文概括主题,只输出标题本身,不要引号、不要解释。"))
+                put(JSONObject().put("role", "user").put("content",
+                    "用户:${firstUser.take(120)}\n助手:${firstReply.take(120)}"))
+            })
+            put("max_tokens", 32)
+            put("thinking", JSONObject().apply { put("type", "disabled") })
+        }
+        val (code, text) = try {
+            Http.postJson(provider.defaultBaseUrl + provider.defaultPath, body.toString(), key, timeoutMs = Http.READ_TIMEOUT_QUICK)
+        } catch (e: Exception) {
+            return "" to null
+        }
+        if (code !in 200..299) return "" to null
+        return try {
+            val root = JSONObject(text)
+            val title = root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
+                ?.trim()?.trim('"', '“', '”')?.take(16) ?: ""
+            val usageRaw = root.optJSONObject("usage")
+            val usage = usageRaw?.let {
+                TokenUsage(
+                    promptTokens = it.optInt("prompt_tokens"),
+                    cacheHit = it.optInt("prompt_cache_hit_tokens"),
+                    cacheMiss = it.optInt("prompt_cache_miss_tokens"),
+                    completionTokens = it.optInt("completion_tokens"),
+                    totalTokens = it.optInt("total_tokens"),
+                )
+            }
+            title to usage
+        } catch (e: Exception) {
+            "" to null
+        }
+    }
 }
 
 /** 供 ChatRepository 读取已启用 skills 的注入文本(由 Settings 层设置) */

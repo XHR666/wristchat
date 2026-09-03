@@ -44,6 +44,8 @@ class SettingsFragment : Fragment() {
         adapter = SettingsAdapter(emptyList())
         binding.recycler.layoutManager = LinearLayoutManager(requireContext())
         binding.recycler.adapter = adapter
+        binding.timeCapsule.bind(binding.recycler)
+        binding.indicatorWrap.bindChild()
         binding.tvTitle.text = "设置"
 
         vm.sessionWarn.observe(viewLifecycleOwner) { warn ->

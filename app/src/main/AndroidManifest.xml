@@ -15,7 +15,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.WristChat"
+        android:theme="@style/Theme.WristChat.Splash"
         android:usesCleartextTraffic="false">
 
         <activity
@@ -44,6 +44,10 @@
             android:name=".CategoryActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".SyncActivity"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

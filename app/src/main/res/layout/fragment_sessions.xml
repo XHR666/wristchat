@@ -25,26 +25,20 @@
 
         <TextView
             android:id="@+id/tvTitle"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:gravity="center"
-            android:text="设置"
+            android:text="会话"
             android:textColor="?attr/wristText"
             android:textSize="14sp"
             android:textStyle="bold" />
-    </LinearLayout>
 
-    <!-- 会话上限提示(设置页顶部,非聊天横幅) -->
-    <TextView
-        android:id="@+id/tvSessionWarn"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#3D2E14"
-        android:padding="8dp"
-        android:text="会话已达上限,建议清理"
-        android:textColor="#FFD9A0"
-        android:textSize="12sp"
-        android:visibility="gone" />
+        <Button
+            android:id="@+id/btnNew"
+            style="@style/HeaderIcon"
+            android:text="＋" />
+    </LinearLayout>
 
     <io.github.xhr666.wristchat.ui.common.ScrollIndicatorLayout
         android:id="@+id/indicatorWrap"
@@ -57,10 +51,21 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:paddingTop="10dp"
-            android:paddingBottom="24dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="16dp"
             android:scrollbars="none" />
     </io.github.xhr666.wristchat.ui.common.ScrollIndicatorLayout>
+
+    <TextView
+        android:id="@+id/tvEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingBottom="24dp"
+        android:text="暂无会话,去聊天页开始第一段对话吧"
+        android:textColor="?attr/wristHint"
+        android:textSize="12sp"
+        android:visibility="gone" />
 </LinearLayout>

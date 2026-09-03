@@ -15,22 +15,21 @@ object Pricing {
     private val BASE = Price(doubleArrayOf(0.05, 0.10), doubleArrayOf(1.5, 3.0), doubleArrayOf(4.5, 9.0))
     private val PRO = Price(doubleArrayOf(0.15, 0.30), doubleArrayOf(4.5, 9.0), doubleArrayOf(13.5, 27.0))
 
-    // 2026-08-23 00:00 北京时间 = 2026-08-22 16:00 UTC
-    private val WEEKEND_VALLEY_FROM_SEC = 1784764800L
-
     fun priceFor(model: String): Price {
         val m = model.lowercase()
         return if ("pro" in m && "vision" !in m) PRO else BASE
     }
 
+    /**
+     * 官方规则(api-docs.deepseek.com/zh-cn/quick_start/pricing):
+     * 高峰 = 北京时间周一至周五 9:00-12:00、14:00-18:00;其余(含整个周末、夜间)全为空闲。
+     */
     fun isPeak(timeSec: Long): Boolean {
         val bj = Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
         bj.timeInMillis = timeSec * 1000
         val hour = bj.get(Calendar.HOUR_OF_DAY)
         val dow = bj.get(Calendar.DAY_OF_WEEK) // 1=Sun ... 7=Sat
-        if (timeSec >= WEEKEND_VALLEY_FROM_SEC) {
-            if (dow == Calendar.SUNDAY || dow == Calendar.SATURDAY) return false
-        }
+        if (dow == Calendar.SUNDAY || dow == Calendar.SATURDAY) return false // 周末全天谷价
         return (hour in 9 until 12) || (hour in 14 until 18)
     }
 

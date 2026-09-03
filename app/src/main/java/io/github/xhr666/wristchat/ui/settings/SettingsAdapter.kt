@@ -54,13 +54,19 @@ class SettingsAdapter(
                 if (row.type == SettingRow.TOGGLE) {
                     holder.switch.visibility = View.VISIBLE
                     holder.value.visibility = View.GONE
+                    // 先摘监听再设值,避免 setChecked 触发回调造成重入(修复:开密码弹窗点取消又弹关闭确认)
+                    holder.switch.setOnCheckedChangeListener(null)
                     holder.switch.isChecked = row.checked
                     holder.switch.setOnCheckedChangeListener { _, checked -> row.onToggle?.invoke(checked) }
                     holder.itemView.setOnClickListener { holder.switch.isChecked = !holder.switch.isChecked }
                 } else {
                     holder.switch.visibility = View.GONE
                     holder.value.visibility = View.VISIBLE
-                    holder.itemView.setOnClickListener { row.onClick?.invoke() }
+                    if (row.onClick == null) {
+                        holder.itemView.setOnClickListener(null)
+                    } else {
+                        holder.itemView.setOnClickListener { row.onClick?.invoke() }
+                    }
                 }
             }
         }

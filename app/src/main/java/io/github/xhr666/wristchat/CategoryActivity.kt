@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,12 +23,9 @@ import io.github.xhr666.wristchat.data.ImportParser
 import io.github.xhr666.wristchat.data.Providers
 import io.github.xhr666.wristchat.data.ReleaseInfo
 import io.github.xhr666.wristchat.data.SettingsStore
-import io.github.xhr666.wristchat.data.SyncServer
 import io.github.xhr666.wristchat.data.UpdateRepository
 import io.github.xhr666.wristchat.data.UpdateResult
 import io.github.xhr666.wristchat.databinding.ActivityCategoryBinding
-import android.widget.ImageView
-import io.github.xhr666.wristchat.ui.common.QrUtil
 import io.github.xhr666.wristchat.ui.common.RoundInsets
 import io.github.xhr666.wristchat.ui.common.WristDialog
 import io.github.xhr666.wristchat.ui.common.ThemeManager
@@ -44,13 +42,21 @@ import java.io.File
 /** 设置分类子页:通用宿主,按 category 键构建行 */
 class CategoryActivity : AppCompatActivity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        val s = try { (newBase.applicationContext as WristChatApp).settings } catch (e: Exception) { null }
+        super.attachBaseContext(if (s != null) io.github.xhr666.wristchat.ui.common.ScaleManager.apply(newBase, s) else newBase)
+    }
+
+
     private lateinit var binding: ActivityCategoryBinding
     private lateinit var adapter: SettingsAdapter
-    private val settings by lazy { (application as WristChatApp).settings }
+    private val settings by lazy {
+
+
+ (application as WristChatApp).settings }
     private val vm: SettingsViewModel by lazy {
         ViewModelProvider(this, SettingsViewModelFactory(application))[SettingsViewModel::class.java]
     }
-    private var syncServer: SyncServer? = null
     private var updateRepo: UpdateRepository? = null
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -117,6 +123,8 @@ class CategoryActivity : AppCompatActivity() {
         adapter = SettingsAdapter(emptyList())
         binding.recycler.layoutManager = LinearLayoutManager(this)
         binding.recycler.adapter = adapter
+        binding.timeCapsule.bind(binding.recycler)
+        binding.indicatorWrap.bindChild()
         rebuild()
     }
 
@@ -125,11 +133,6 @@ class CategoryActivity : AppCompatActivity() {
         rebuild()
     }
 
-    override fun onPause() {
-        super.onPause()
-        syncServer?.stop()
-        syncServer = null
-    }
 
     // ---------- 行构建 ----------
     private fun rebuild() {
@@ -146,9 +149,11 @@ class CategoryActivity : AppCompatActivity() {
                     val ids = Providers.all().map { it.id } + SettingsStore.PROVIDER_CUSTOM
                     singleChoice("服务商", ids.map { Providers.byId(it).name }, ids.indexOf(s.providerId).coerceAtLeast(0)) { idx ->
                         s.providerId = ids[idx]
-                        if (ids[idx] != SettingsStore.PROVIDER_CUSTOM && s.baseUrl.isBlank()) {
-                            s.baseUrl = Providers.byId(ids[idx]).defaultBaseUrl
-                            s.apiPath = Providers.byId(ids[idx]).defaultPath
+                        // 切换服务商 = 换该商默认地址(自定义保留用户输入)
+                        if (ids[idx] != SettingsStore.PROVIDER_CUSTOM) {
+                            val p = Providers.byId(ids[idx])
+                            s.baseUrl = p.defaultBaseUrl
+                            s.apiPath = p.defaultPath
                         }
                         rebuild()
                     }
@@ -159,11 +164,11 @@ class CategoryActivity : AppCompatActivity() {
                 rows += row("平台 Token(可选)", if (s.platformToken.isBlank()) "(未设置)" else "已设置") {
                     editText("平台 Token(仅今日用量)", s.platformToken, password = true) { s.platformToken = it; rebuild() }
                 }
-                rows += row("API Base URL", s.baseUrl.ifBlank { Providers.byId(s.providerId).defaultBaseUrl }) {
-                    editText("API Base URL", s.baseUrl) { s.baseUrl = it; rebuild() }
+                rows += row("API Base URL", displayBase(s)) {
+                    editText("API Base URL", s.baseUrl.ifBlank { Providers.byId(s.providerId).defaultBaseUrl }) { s.baseUrl = it; rebuild() }
                 }
                 rows += row("API 路径", s.apiPath.ifBlank { "/chat/completions" }) {
-                    editText("API 路径", s.apiPath) { s.apiPath = it; rebuild() }
+                    editText("API 路径", s.apiPath.ifBlank { "/chat/completions" }) { s.apiPath = it; rebuild() }
                 }
             }
             CAT_MODEL -> {
@@ -185,12 +190,13 @@ class CategoryActivity : AppCompatActivity() {
                         s.reasoningEffort = opts[idx]; rebuild()
                     }
                 }
-                rows += row("温度", s.temperature.toString()) { editNumber("温度(0-2)", s.temperature, 0f, 2f) { s.temperature = it; rebuild() } }
-                rows += row("Top P", s.topP.toString()) { editNumber("Top P(0-1)", s.topP, 0f, 1f) { s.topP = it; rebuild() } }
+                rows += row("温度", s.temperature.toString() + "\n(高级参数:不要修改,除非你知道自己在干什么)") { editNumber("温度(0-2)\n不要修改,除非你知道自己在干什么", s.temperature, 0f, 2f) { s.temperature = it; rebuild() } }
+                rows += row("Top P", s.topP.toString() + "\n(高级参数:不要修改,除非你知道自己在干什么)") { editNumber("Top P(0-1)\n不要修改,除非你知道自己在干什么", s.topP, 0f, 1f) { s.topP = it; rebuild() } }
                 rows += row("最大输出 tokens", s.maxTokens.toString()) { editNumber("最大输出 tokens", s.maxTokens.toFloat(), 256f, 65536f) { s.maxTokens = it.toInt(); rebuild() } }
                 rows += row("上下文窗口", s.contextWindow.toString()) { editNumber("上下文窗口", s.contextWindow.toFloat(), 10000f, 2000000f) { s.contextWindow = it.toInt(); rebuild() } }
                 rows += row("压缩阈值 %", "${s.compressThreshold}%") { editNumber("压缩阈值(50-95)", s.compressThreshold.toFloat(), 50f, 95f) { s.compressThreshold = it.toInt(); rebuild() } }
                 rows += row("自定义系统 Prompt", if (s.customPrompt.isBlank()) "(空)" else "已设置") { editMultiline("自定义系统 Prompt", s.customPrompt) { s.customPrompt = it; rebuild() } }
+                rows += toggle("自动生成会话标题", s.autoTitle) { s.autoTitle = it }
             }
             CAT_QUICK -> {
                 rows += row("管理快捷输入", "${s.getQuickInputs().size} 条") { manageQuickInputs() }
@@ -221,24 +227,19 @@ class CategoryActivity : AppCompatActivity() {
                     }
                 }
                 rows += row("清理全部数据", "会话/记忆/技能/设置") {
-                    confirm("清理全部数据", "将删除所有会话、记忆、技能和设置(不可恢复)") {
-                        toast("已释放 ${vm.human(vm.clearAllData())}")
-                    }
+                    WristDialog.build(this)
+                        .setTitle("清理全部数据")
+                        .setMessage("将删除所有会话、记忆、技能和设置(不可恢复)\n\n${vm.human(vm.sessionStore.totalSizeBytes() + vm.memoryStore.sizeBytes() + vm.skillStore.totalSizeBytes())}")
+                        .setPositive("确定", { toast("已释放 ${vm.human(vm.clearAllData())}") })
+                        .setNegative("取消", null)
+                        .withPositiveCountdown(5)
+                        .show()
                 }
             }
             CAT_UPDATE -> {
                 rows += row("检查更新", "") { checkUpdate(manual = true) }
-                if (syncServer != null) {
-                    rows += row("手机同步", syncStatusText()) { startSync() }
-                    rows += row("停止同步", "") { stopSync() }
-                } else {
-                    rows += row("手机同步", "未开启") { startSync() }
-                }
-                rows += row("仓库", "${s.repoOwner}/${s.repoName}") {
-                    editText("仓库(owner/repo)", "${s.repoOwner}/${s.repoName}") { input ->
-                        val parts = input.split("/")
-                        if (parts.size == 2) { s.repoOwner = parts[0].trim(); s.repoName = parts[1].trim(); rebuild() }
-                    }
+                rows += row("手机同步", "二维码扫码连接") {
+                    startActivity(Intent(this, SyncActivity::class.java))
                 }
                 rows += row("自动检查冷却(分钟)", s.updateCooldownMin.toString()) {
                     editNumber("冷却分钟(5-60)", s.updateCooldownMin.toFloat(), 5f, 60f) { s.updateCooldownMin = it.toInt(); rebuild() }
@@ -256,9 +257,18 @@ class CategoryActivity : AppCompatActivity() {
                         recreate()
                     }
                 }
+                rows += row("显示大小", "%.2f".format(s.displayScale) + if (s.displayScale == 1.0f) " (默认)" else "") {
+                    val opts = (0 until 9).map { 0.9f + it * 0.05f }
+                    singleChoice("显示大小(即时生效)", opts.map { "%.2f".format(it) }, opts.indexOf(s.displayScale).coerceAtLeast(0)) { idx ->
+                        s.displayScale = opts[idx]
+                        recreate()
+                    }
+                }
             }
             CAT_ABOUT -> {
                 rows += SettingRow(SettingRow.VALUE, "版本", "${settings.versionName}(${BuildConfig.VERSION_CODE})")
+                rows += row("开源许可", "MIT 及第三方库") { showLicenses() }
+                rows += row("查看崩溃日志", "") { showCrashLog() }
                 rows += row("开源仓库", "github.com/XHR666/wristchat") {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/${s.repoOwner}/${s.repoName}")))
                 }
@@ -269,6 +279,11 @@ class CategoryActivity : AppCompatActivity() {
 
     private fun row(title: String, value: String, onClick: () -> Unit) =
         SettingRow(SettingRow.VALUE, title, value, onClick = { onClick() })
+
+    private fun displayBase(s: SettingsStore): String {
+        val p = Providers.byId(s.providerId)
+        return s.baseUrl.ifBlank { p.defaultBaseUrl }
+    }
 
     private fun toggle(title: String, checked: Boolean, onToggle: (Boolean) -> Unit) =
         SettingRow(SettingRow.TOGGLE, title, checked = checked, onToggle = onToggle)
@@ -393,19 +408,63 @@ class CategoryActivity : AppCompatActivity() {
     }
 
     // ---------- 快捷输入 / 技能 / 记忆 / 会话 ----------
+    /** 逐条管理(手表输入法不能换行):列表→点条目编辑→可删除;底部「＋ 添加」 */
     private fun manageQuickInputs() {
+        showQuickList(0)
+    }
+
+    private fun showQuickList(highlight: Int) {
+        val list = settings.getQuickInputs()
+        val items = list.mapIndexed { i, s -> (if (i == highlight && highlight > 0) "▶ " else "") + s.take(24) } + "＋ 添加"
+        WristDialog.items(this, "快捷输入(点击条目编辑)", items, onPick = { which ->
+            if (which < list.size) showQuickEditor(which) else showQuickEditor(list.size) // 新条目
+        })
+    }
+
+    private fun showQuickEditor(index: Int) {
+        val list = settings.getQuickInputs().toMutableList()
+        val isNew = index >= list.size
         val et = EditText(this).apply {
-            setText(settings.getQuickInputs().joinToString("\n"))
-            gravity = Gravity.TOP; minLines = 5; hint = "每行一条"
+            setText(if (isNew) "" else list[index])
+            hint = if (isNew) "输入快捷内容(单行)" else "修改内容(单行)"
+            setSelection(text.length)
         }
-        WristDialog.build(this)
-            .setTitle("快捷输入(每行一条)")
-            .setView(et)
-            .setPositive("保存") {
-                settings.setQuickInputs(et.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() })
-                rebuild()
+        val deleteLabel = TextView(this).apply {
+            text = if (isNew) "" else "删除该条"
+            setTextColor(getColor(R.color.accent))
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setPadding(0, 10, 0, 4)
+            isClickable = !isNew
+            if (!isNew) setOnClickListener {
+                list.removeAt(index)
+                settings.setQuickInputs(list)
+                toast("已删除")
+                showQuickList(0)
             }
-            .setNegative("取消", null)
+        }
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        column.addView(et)
+        column.addView(deleteLabel)
+
+        WristDialog.build(this)
+            .setTitle(if (isNew) "添加快捷输入" else "编辑快捷输入")
+            .setView(column)
+            .setPositive("保存") {
+                val text = et.text.toString().trim()
+                if (text.isEmpty()) { toast("内容为空"); return@setPositive }
+                val l = settings.getQuickInputs().toMutableList()
+                if (isNew) {
+                    if (l.size >= 20) { toast("已达 20 条上限"); showQuickList(0); return@setPositive }
+                    l.add(text)
+                } else {
+                    if (index < l.size) l[index] = text
+                }
+                settings.setQuickInputs(l)
+                rebuild()
+                showQuickList(0)
+            }
+            .setNegative("返回列表") { showQuickList(0) }
             .show()
     }
 
@@ -532,106 +591,6 @@ class CategoryActivity : AppCompatActivity() {
     }
 
     // ---------- 手机同步 ----------
-    private fun startSync() {
-        val s = settings
-        if (s.syncPin.length != 4) s.syncPin = (1000..9999).random().toString()
-        val server = SyncServer(
-            pin = s.syncPin,
-            readConfig = { configJson() },
-            applyConfig = { body -> applyConfigJson(body) },
-        )
-        if (!server.start()) { toast("同步服务启动失败"); return }
-        syncServer = server
-        val ip = server.localIp() ?: "未知"
-        val url = "http://$ip:${server.port}"
-
-        // 二维码 + 地址 + PIN(关闭弹窗不停服务,离开本页才停)
-        val column = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
-        val qrSize = (150 * resources.displayMetrics.density).toInt()
-        val qr = ImageView(this).apply {
-            layoutParams = android.widget.LinearLayout.LayoutParams(qrSize, qrSize)
-            setImageBitmap(QrUtil.generate(url, qrSize))
-        }
-        column.addView(qr)
-        column.addView(TextView(this).apply {
-            text = url
-            setTextColor(textColorAttr()); textSize = 11f; gravity = Gravity.CENTER
-        })
-        column.addView(TextView(this).apply {
-            text = "密钥:${s.syncPin}(手机需先输入才能操作)"
-            setTextColor(textColorAttr()); textSize = 12f; gravity = Gravity.CENTER
-        })
-
-        val d = WristDialog.build(this)
-            .setTitle("手机同步已开启")
-            .setView(column)
-            .setPositive("复制") {
-                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("sync", "$url\nPIN:${s.syncPin}"))
-                toast("已复制")
-            }
-            .setNegative("关闭", null)  // 仅关弹窗,服务继续(离开本页自动停)
-        d.show()
-        rebuild()
-    }
-
-    private fun stopSync() {
-        syncServer?.stop()
-        syncServer = null
-        rebuild()
-    }
-
-    private fun syncStatusText(): String {
-        val s = syncServer
-        if (s == null) return "未开启"
-        val ip = s.localIp() ?: "?"
-        return "运行中 http://$ip:${s.port} · PIN:${settings.syncPin}"
-    }
-
-    private fun configJson(): String {
-        val s = settings
-        return org.json.JSONObject().apply {
-            put("temperature", s.temperature); put("topP", s.topP)
-            put("maxTokens", s.maxTokens); put("thinking", s.thinkingEnabled)
-            put("effort", s.reasoningEffort); put("model", s.model)
-            put("provider", s.providerId); put("baseUrl", s.baseUrl); put("apiPath", s.apiPath)
-            put("customPrompt", s.customPrompt)
-            put("quickInputs", org.json.JSONArray(s.getQuickInputs()))
-        }.toString()
-    }
-
-    private fun applyConfigJson(body: String): String {
-        return try {
-            val o = org.json.JSONObject(body)
-            val s = settings
-            s.temperature = o.optDouble("temperature", 1.0).toFloat().coerceIn(0f, 2f)
-            s.topP = o.optDouble("topP", 1.0).toFloat().coerceIn(0f, 1f)
-            s.maxTokens = o.optInt("maxTokens", 4096).coerceIn(256, 65536)
-            s.thinkingEnabled = o.optBoolean("thinking", true)
-            s.reasoningEffort = o.optString("effort", "low")
-            s.model = o.optString("model", s.model)
-            s.providerId = o.optString("provider", s.providerId)
-            s.baseUrl = o.optString("baseUrl", s.baseUrl)
-            s.apiPath = o.optString("apiPath", s.apiPath)
-            s.customPrompt = o.optString("customPrompt", s.customPrompt)
-            o.optJSONArray("quickInputs")?.let { arr -> s.setQuickInputs((0 until arr.length()).map { arr.optString(it) }) }
-            o.optString("apiKey").takeIf { it.isNotBlank() }?.let { s.apiKey = it }
-            val skillName = o.optString("skillName"); val skillContent = o.optString("skillContent")
-            if (skillContent.isNotBlank()) vm.importSkill(skillName.ifBlank { "web_import.md" }, skillContent)
-            // 聊天记录粘贴导入(手机同步页)
-            val chatImport = o.optString("chatImport")
-            if (chatImport.isNotBlank()) {
-                val r = vm.importFromText(chatImport, "web_chat.json")
-                return if (r.startsWith("已导入")) "已保存;$r" else "已保存(聊天导入失败:$r)"
-            }
-            rebuild()
-            "已保存"
-        } catch (e: Exception) { "保存失败:${e.message}" }
-    }
-
     private fun queryName(uri: Uri): String? = runCatching {
         contentResolver.query(uri, null, null, null, null)?.use { c ->
             val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
@@ -645,16 +604,38 @@ class CategoryActivity : AppCompatActivity() {
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
+    private fun showLicenses() {
+        val text = """
+本项目:MIT License
+第三方开源组件:
+- ZXing core (Apache-2.0) — 二维码生成
+- Markwon (Apache-2.0) — Markdown 渲染
+- KaTeX (MIT) — LaTeX 渲染
+- marked.js (MIT) — Markdown→HTML
+- AndroidX / Jetpack (Apache-2.0)
+- kotlinx-coroutines (Apache-2.0)
+完整许可文本见各库官网/GitHub。
+""".trimIndent()
+        WristDialog.build(this).setTitle("开源许可").setMessage(text)
+            .setPositive("关闭", null).hideNegative().show()
+    }
+
+    private fun showCrashLog() {
+        val app = application as WristChatApp
+        val text = app.crashLogText()
+        WristDialog.build(this).setTitle("崩溃日志(最近 100KB)")
+            .setMessage(text.take(1500))
+            .setPositive("关闭", null)
+            .hideNegative()
+            .show()
+    }
+
     private fun textColorAttr(): Int {
         val tv = android.util.TypedValue()
         theme.resolveAttribute(io.github.xhr666.wristchat.R.attr.wristText, tv, true)
         return tv.data
     }
 
-    override fun onDestroy() {
-        syncServer?.stop()
-        super.onDestroy()
-    }
 
     companion object {
         const val EXTRA_CATEGORY = "category"

@@ -6,11 +6,19 @@
     android:orientation="vertical">
 
     <!-- 顶栏:返回 + 分类标题(圆屏安全区由代码动态计算) -->
+    <io.github.xhr666.wristchat.ui.common.TimeCapsuleView
+        android:id="@+id/timeCapsule"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="2dp"
+        android:visibility="invisible" />
+
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="48dp"
-        android:layout_marginTop="22dp"
+        android:layout_marginTop="24dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="8dp"
@@ -39,14 +47,20 @@
             android:layout_height="36dp" />
     </LinearLayout>
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recycler"
+    <io.github.xhr666.wristchat.ui.common.ScrollIndicatorLayout
+        android:id="@+id/indicatorWrap"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
-        android:paddingBottom="24dp"
-        android:scrollbars="none" />
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="24dp"
+            android:scrollbars="none" />
+    </io.github.xhr666.wristchat.ui.common.ScrollIndicatorLayout>
 </LinearLayout>

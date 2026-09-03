@@ -29,6 +29,8 @@ class BalanceFragment : Fragment() {
             binding.topBar.setPadding(inset.coerceAtLeast(minInset), binding.topBar.paddingTop, inset.coerceAtLeast(minInset), binding.topBar.paddingBottom)
         }
         binding.btnRefresh.setOnClickListener { vm.refresh() }
+        binding.timeCapsule.bind(binding.scroll)
+        binding.indicatorWrap.bindChild()
         vm.ui.observe(viewLifecycleOwner) { u ->
             if (u == null) return@observe
             binding.tvPeakBadge.text = u.peakLabel

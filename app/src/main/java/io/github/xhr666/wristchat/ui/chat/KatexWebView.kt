@@ -45,7 +45,7 @@ class KatexWebView(context: Context) : WebView(context) {
 <script src="katex/katex.min.js"></script>
 <script src="js/marked.min.js"></script>
 <style>
-body{margin:6px;padding:0;color:#E8EAED;font-size:13px;line-height:1.45;word-wrap:break-word;overflow-wrap:break-word;background:transparent}
+body{margin:6px;padding:0;color:#E8EAED;font-size:13px;line-height:1.45;word-wrap:break-word;overflow-wrap:break-word;background:transparent;overflow-x:auto;-webkit-overflow-scrolling:touch}
 p{margin:4px 0}
 pre{background:#0D1117;padding:8px;border-radius:6px;overflow-x:auto;font-size:12px}
 code{background:#0D1117;padding:1px 4px;border-radius:4px;font-size:12px}

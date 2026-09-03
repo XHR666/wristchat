@@ -72,10 +72,18 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_MEMORY_AUTO, true)
         set(v) = prefs.edit().putBoolean(KEY_MEMORY_AUTO, v).apply()
 
+    var autoTitle: Boolean // 新会话自动生成标题(默认开)
+        get() = prefs.getBoolean(KEY_AUTO_TITLE, true)
+        set(v) = prefs.edit().putBoolean(KEY_AUTO_TITLE, v).apply()
+
     // ---- 主题 ----
     var theme: String // light / dark / amoled
         get() = prefs.getString(KEY_THEME, "amoled") ?: "amoled"
         set(v) = prefs.edit().putString(KEY_THEME, v).apply()
+
+    var displayScale: Float // 显示大小 0.9-1.3
+        get() = prefs.getFloat(KEY_DISPLAY_SCALE, 1.0f)
+        set(v) = prefs.edit().putFloat(KEY_DISPLAY_SCALE, v).apply()
 
     // ---- 密码 ----
     var passwordEnabled: Boolean
@@ -184,7 +192,9 @@ class SettingsStore(context: Context) {
         private const val KEY_COMPRESS_THRESHOLD = "compress_threshold"
         private const val KEY_CUSTOM_PROMPT = "custom_prompt"
         private const val KEY_MEMORY_AUTO = "memory_auto"
+        private const val KEY_AUTO_TITLE = "auto_title"
         private const val KEY_THEME = "theme"
+        private const val KEY_DISPLAY_SCALE = "display_scale"
         private const val KEY_PASS_ENABLED = "pass_enabled"
         private const val KEY_PASS_HASH = "pass_hash"
         private const val KEY_PASS_SALT = "pass_salt"

@@ -16,9 +16,8 @@
 
         <TextView
             android:id="@+id/tvTitle"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
             android:gravity="center"
             android:textColor="?attr/wristText"
             android:textSize="15sp"
@@ -31,9 +30,10 @@
             android:layout_marginTop="10dp" />
 
         <LinearLayout
+            android:id="@+id/btnRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="10dp"
             android:gravity="center"
             android:orientation="horizontal">
 

@@ -16,8 +16,17 @@ import java.security.MessageDigest
  */
 class AppLockActivity : AppCompatActivity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        val s = try { (newBase.applicationContext as WristChatApp).settings } catch (e: Exception) { null }
+        super.attachBaseContext(if (s != null) io.github.xhr666.wristchat.ui.common.ScaleManager.apply(newBase, s) else newBase)
+    }
+
+
     private lateinit var binding: ActivityLockBinding
-    private val settings by lazy { (application as WristChatApp).settings }
+    private val settings by lazy {
+
+
+ (application as WristChatApp).settings }
     private var timer: CountDownTimer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {

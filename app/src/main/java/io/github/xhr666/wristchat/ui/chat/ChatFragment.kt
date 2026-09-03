@@ -7,7 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.viewModels
+import androidx.fragment.app.activityViewModels
 import androidx.recyclerview.widget.LinearLayoutManager
 import io.github.xhr666.wristchat.FullscreenInputActivity
 import io.github.xhr666.wristchat.R
@@ -19,7 +19,7 @@ class ChatFragment : Fragment() {
 
     private var _binding: FragmentChatBinding? = null
     private val binding get() = _binding!!
-    private val vm: ChatViewModel by viewModels { ChatViewModelFactory(requireActivity().application) }
+    private val vm: ChatViewModel by activityViewModels { ChatViewModelFactory(requireActivity().application) }
     private lateinit var adapter: ChatAdapter
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -40,6 +40,10 @@ class ChatFragment : Fragment() {
         }
         binding.recycler.layoutManager = LinearLayoutManager(requireContext())
         binding.recycler.adapter = adapter
+        // 时间胶囊(聊天页常驻)+ 侧边滚动指示条
+        binding.timeCapsule.alwaysVisible = true
+        binding.timeCapsule.bind(binding.recycler)
+        binding.indicatorWrap.bindChild()
 
         // 输入:点击输入框 -> 全屏输入页
         binding.etInput.setOnClickListener {

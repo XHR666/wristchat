@@ -60,6 +60,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _title = MutableLiveData("")
     val title: LiveData<String> = _title
 
+    private val _sessions = MutableLiveData<List<Session>>(emptyList())
+    val sessions: LiveData<List<Session>> = _sessions
+
     init {
         _quickInputs.value = settings.getQuickInputs()
         SkillStoreProviderInject.refresh(skillStore)
@@ -71,7 +74,36 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val s = list.firstOrNull() ?: sessionStore.create()
         _session.value = s
         _title.value = s.title
+        refreshSessions()
         refreshDetails()
+    }
+
+    fun refreshSessions() {
+        _sessions.value = sessionStore.list()
+    }
+
+    /** 负一屏选择会话(草稿保留) */
+    fun setCurrentSession(id: String) {
+        val s = sessionStore.load(id) ?: return
+        _session.value = s
+        _title.value = s.title
+        refreshDetails()
+    }
+
+    /** 负一屏删除会话 */
+    fun deleteSession(id: String) {
+        sessionStore.delete(id)
+        refreshSessions()
+        val cur = _session.value
+        if (cur != null && cur.id == id) loadOrCreateSession()
+    }
+
+    /** 手动重命名会话 */
+    fun renameSession(id: String, title: String) {
+        val s = sessionStore.load(id) ?: return
+        sessionStore.rename(s, title)
+        refreshSessions()
+        if (_session.value?.id == id) _title.value = title
     }
 
     fun setDraft(text: String) { _draft.value = text }
@@ -95,6 +127,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _session.value = s
         _title.value = s.title
         clearDraft()
+        refreshSessions()
         refreshDetails()
     }
 
@@ -106,6 +139,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             s.compressedCount = 0
             sessionStore.save(s)
             _session.value = s
+            refreshSessions()
             refreshDetails()
         }
     }
@@ -209,6 +243,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     if (result.memoryOps.isNotEmpty()) {
                         _status.value = "已更新 ${result.memoryOps.size} 条记忆"
                     }
+                    refreshSessions()
+                    maybeAutoTitle(s, trimmed, result.content)
                 }
                 is ChatResult.Error -> {
                     _status.value = result.message
@@ -228,6 +264,29 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         var chinese = 0; var other = 0
         text.forEach { c -> if (c.code in 0x4E00..0x9FFF) chinese++ else other++ }
         return (chinese * 0.6 + other * 0.3).toInt()
+    }
+
+    /** 新会话首轮回复后自动生成标题(默认开,设置可关;消耗计入会话) */
+    private fun maybeAutoTitle(s: Session, userText: String, reply: String) {
+        if (!settings.autoTitle) return
+        if (s.title != "新会话") return
+        if (s.messages.count { it.role == "user" } > 1) return
+        viewModelScope.launch {
+            val (title, usage) = repo.genTitle(userText, reply)
+            if (title.isNotBlank()) {
+                sessionStore.rename(s, title)
+                _title.value = title
+                refreshSessions()
+            }
+            usage?.let { u ->
+                val cost = io.github.xhr666.wristchat.data.Pricing.cost(
+                    settings.model, System.currentTimeMillis() / 1000,
+                    u.cacheHit.toLong(), u.cacheMiss.toLong(), u.completionTokens.toLong()
+                )
+                sessionStore.addUsageOnly(s, u, cost)
+                refreshDetails()
+            }
+        }
     }
 
     private suspend fun maybeCompress(s: Session) {

@@ -14,12 +14,22 @@ import io.github.xhr666.wristchat.ui.chat.ChatFragment
 import io.github.xhr666.wristchat.ui.common.CrownScroll
 import io.github.xhr666.wristchat.ui.common.PagerAdapter
 import io.github.xhr666.wristchat.ui.common.ThemeManager
+import io.github.xhr666.wristchat.ui.sessions.SessionListFragment
 import io.github.xhr666.wristchat.ui.settings.SettingsFragment
 
 class MainActivity : AppCompatActivity() {
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        val s = try { (newBase.applicationContext as WristChatApp).settings } catch (e: Exception) { null }
+        super.attachBaseContext(if (s != null) io.github.xhr666.wristchat.ui.common.ScaleManager.apply(newBase, s) else newBase)
+    }
+
+
     private lateinit var binding: ActivityMainBinding
-    private val settings by lazy { (application as WristChatApp).settings }
+    private val settings by lazy {
+
+
+ (application as WristChatApp).settings }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeManager.apply(this, settings)
@@ -37,9 +47,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.pager.adapter = PagerAdapter(this, listOf(
-            ChatFragment(), BalanceFragment(), SettingsFragment(),
+            SessionListFragment(), ChatFragment(), BalanceFragment(), SettingsFragment(),
         ))
-        binding.pager.offscreenPageLimit = 2
+        binding.pager.offscreenPageLimit = 3
+        // 默认落在聊天页(第 2 页;左侧即负一屏会话)
+        binding.pager.setCurrentItem(1, false)
         binding.pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 // 切页时收起键盘(草稿在 ViewModel,不丢)
@@ -49,6 +61,11 @@ class MainActivity : AppCompatActivity() {
 
         // 密码锁:启动时验证
         maybeShowLock()
+    }
+
+    /** 负一屏点击会话 → 切到聊天页 */
+    fun showChatPage() {
+        binding.pager.setCurrentItem(1, true)
     }
 
     override fun onResume() {
