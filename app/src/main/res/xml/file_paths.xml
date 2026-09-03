@@ -2,5 +2,5 @@
 <paths>
     <cache-path
         name="cache"
-        path="." />
+        path="updates/" />
 </paths>

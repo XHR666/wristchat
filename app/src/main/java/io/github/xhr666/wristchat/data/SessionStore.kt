@@ -130,7 +130,11 @@ class SessionStore(private val context: Context) {
             put("totalRequests", s.totalRequests)
             put("compressedCount", s.compressedCount)
         }
-        File(dir, "${s.id}.json").writeText(o.toString())
+        // 原子写:先写 .tmp 再 rename,防崩溃损坏
+        val target = File(dir, "${s.id}.json")
+        val tmp = File(dir, "${s.id}.json.tmp")
+        tmp.writeText(o.toString())
+        if (!tmp.renameTo(target)) { target.writeText(o.toString()); tmp.delete() }
     }
 
     fun delete(id: String) {

@@ -15,9 +15,10 @@ class SyncServer(
     private val readConfig: () -> String,          // JSON string of current settings
     private val applyConfig: (String) -> String,   // JSON body -> ok msg or error
 ) {
-    private var serverSocket: ServerSocket? = null
-    private var running = false
+    @Volatile private var serverSocket: ServerSocket? = null
+    @Volatile private var running = false
     private var thread: Thread? = null
+    private var pool: java.util.concurrent.ExecutorService? = null
     var port: Int = 0
         private set
 
@@ -26,6 +27,7 @@ class SyncServer(
             serverSocket = ServerSocket(0)
             port = serverSocket!!.localPort
             running = true
+            pool = java.util.concurrent.Executors.newFixedThreadPool(2)
             thread = Thread { acceptLoop() }.apply { isDaemon = true; start() }
             true
         } catch (e: Exception) {
@@ -37,6 +39,7 @@ class SyncServer(
         running = false
         try { serverSocket?.close() } catch (e: Exception) {}
         thread?.interrupt()
+        pool?.shutdownNow()
         serverSocket = null
     }
 
@@ -51,7 +54,7 @@ class SyncServer(
     private fun acceptLoop() {
         while (running) {
             val client = try { serverSocket?.accept() ?: return } catch (e: Exception) { return }
-            Thread { handle(client) }.apply { isDaemon = true; start() }
+            pool?.execute { handle(client) }
         }
     }
 
@@ -73,7 +76,12 @@ class SyncServer(
                     contentLength = line.substringAfter(':').trim().toIntOrNull() ?: 0
                 }
             }
-            val body = if (contentLength > 0) CharArray(contentLength).let { input.read(it); String(it) } else ""
+            val safeLen = if (contentLength in 1..1_048_576) contentLength else 0
+            val body = if (safeLen > 0) {
+                val buf = CharArray(safeLen); var off = 0
+                while (off < safeLen) { val n = input.read(buf, off, safeLen - off); if (n < 0) break; off += n }
+                String(buf, 0, off)
+            } else ""
 
             val response = when {
                 path.startsWith("/api/config") -> handleConfig(path)
@@ -106,7 +114,7 @@ class SyncServer(
         if (!checkPin(path)) return """{"ok":false,"error":"PIN 错误"}"""
         if (body.isBlank()) return """{"ok":false,"error":"空请求"}"""
         val result = applyConfig(body)
-        return """{"ok":true,"message":"$result"}"""
+        return org.json.JSONObject().put("ok", true).put("message", result).toString()
     }
 
     private fun handleHtml(): String = PAGE_HTML

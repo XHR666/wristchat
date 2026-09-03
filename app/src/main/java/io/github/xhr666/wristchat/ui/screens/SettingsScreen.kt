@@ -98,7 +98,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                 "about" -> aboutRows(settings, vm, dialogs)
             }
         }
-        RotaryList(listState, enabled = true)
+        RotaryList(listState, enabled = LocalCurrentPage.current == 3)
     }
     WDialogHost(dialogs)
 }
@@ -327,7 +327,8 @@ private const val LICENSE_TEXT = """
 """
 
 private suspend fun installRelease(ctx: Context, repo: UpdateRepository, info: ReleaseInfo): String {
-    val target = java.io.File(ctx.cacheDir, info.apkName ?: "update.apk")
+    val dir = java.io.File(ctx.cacheDir, "updates").apply { mkdirs() }
+    val target = java.io.File(dir, info.apkName ?: "update.apk")
     if (!repo.download(info.apkUrl ?: "", target) { _, _ -> }) return "下载失败,请重试"
     if (!repo.verifySha256(info.sha256, target)) { target.delete(); return "下载校验失败,已取消" }
     return try {

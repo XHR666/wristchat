@@ -155,8 +155,8 @@ class SettingsStore(context: Context) {
 
     // ---- 手机同步 ----
     var syncPin: String
-        get() = prefs.getString(KEY_SYNC_PIN, "") ?: ""
-        set(v) = prefs.edit().putString(KEY_SYNC_PIN, v).apply()
+        get() = Crypto.decrypt(prefs.getString(KEY_SYNC_PIN, "") ?: "")
+        set(v) = prefs.edit().putString(KEY_SYNC_PIN, Crypto.encrypt(v)).apply()
 
     // ---- 本地记账(余额差值) ----
     var versionName: String

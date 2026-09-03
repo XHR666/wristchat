@@ -39,9 +39,12 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
             onUnlocked(); return
         }
         s.failCount += 1
-        val last = (s.lastFiveInputs.split(",").filter { it.isNotEmpty() } + pin).takeLast(5)
+        // 仅存 PIN 的哈希,避免明文落盘;0000 重置判定用明文常量(哈希可比较)
+        val h = hashPinPlain(pin)
+        val last = (s.lastFiveInputs.split(",").filter { it.isNotEmpty() } + h).takeLast(5)
         s.lastFiveInputs = last.joinToString(",")
-        if (last.size >= 5 && last.all { it == "0000" }) s.pendingReset0000 = true
+        val h0 = hashPinPlain("0000")
+        if (last.size >= 5 && last.all { it == h0 }) s.pendingReset0000 = true
         if (s.failCount >= 5) {
             lockedUntil = System.currentTimeMillis() + 30_000
             s.failCount = 0
@@ -106,4 +109,9 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
 private fun hash(pin: String, salt: String): String {
     val md = MessageDigest.getInstance("SHA-256")
     return md.digest("$salt:$pin".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+}
+
+private fun hashPinPlain(pin: String): String {
+    val md = MessageDigest.getInstance("SHA-256")
+    return md.digest(pin.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 }
