@@ -17,6 +17,8 @@ import java.io.File
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
+    val appContext: android.content.Context get() = getApplication()
+
     val settings: SettingsStore = (app as WristChatApp).settings
     val sessionStore = SessionStore(app)
     val memoryStore = MemoryStore(app)

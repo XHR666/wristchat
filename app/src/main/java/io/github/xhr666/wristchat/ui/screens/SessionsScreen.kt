@@ -1,0 +1,80 @@
+package io.github.xhr666.wristchat.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.github.xhr666.wristchat.data.SettingsStore
+import io.github.xhr666.wristchat.ui.*
+import io.github.xhr666.wristchat.ui.chat.ChatViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/** 负一屏:会话列表(AI 标题),点击打开聊天 */
+@Composable
+fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () -> Unit) {
+    val sessions by vm.sessions.observeAsState(emptyList())
+    val currentPage = LocalCurrentPage.current
+    val listState = rememberLazyListState()
+    val c = LocalWrist.current
+
+    LaunchedEffect(Unit) { vm.refreshSessions() }
+    var deleteTarget by remember { mutableStateOf<io.github.xhr666.wristchat.data.Session?>(null) }
+
+    ScreenScaffold(
+        title = if (sessions.isEmpty()) "会话" else "会话(${sessions.size})",
+        showTimeAlways = true,
+        actions = {},
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 20.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
+            ) {
+                itemsIndexed(sessions) { _, s ->
+                    WCard(
+                        title = s.title.ifBlank { "新会话" },
+                        value = sub(s),
+                        onClick = {
+                            vm.setCurrentSession(s.id)
+                            onOpenChat()
+                        },
+                        onLongClick = { deleteTarget = s },
+                    )
+                }
+                item { Spacer(Modifier.height(4.dp)) }
+            }
+            // 提示
+            if (sessions.isEmpty()) {
+                Text("暂无会话\n去聊天页开始第一段对话", color = c.hint, fontSize = 12.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.align(Alignment.CenterHorizontally))
+            }
+        }
+        RotaryList(listState, enabled = currentPage == 0)
+    }
+
+    deleteTarget?.let { s ->
+        WConfirm("删除会话", "删除「${s.title.take(14)}」?不可恢复",
+            okText = "删除", onOk = { vm.deleteSession(s.id); deleteTarget = null },
+            onCancel = { deleteTarget = null })
+    }
+}
+
+private fun sub(s: io.github.xhr666.wristchat.data.Session): String {
+    val cost = if (s.totalCost > 0) " · ¥%.3f".format(s.totalCost) else ""
+    return "${s.messages.size} 条 · ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.updatedAt))}$cost"
+}
