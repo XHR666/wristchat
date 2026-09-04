@@ -81,6 +81,7 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
                 },
                 hint = buildString {
                     if (!supports) append("⚠ 仅支持 DeepSeek 余额查询\n")
+                    append("高峰:周一至五 9-12、14-18(北京时间),其余含周末全空闲\n")
                     append(Pricing.priceLabel(settings.model))
                     result.error?.let { append("\n上次错误:$it") }
                 },
@@ -90,12 +91,20 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 距当前时段结束(北京时间);周末全天谷价,下一个高峰=周一 9:00 */
     private fun nextSwitchSeconds(): Long {
         val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
+        val dow = cal.get(Calendar.DAY_OF_WEEK)
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val min = cal.get(Calendar.MINUTE)
         val sec = cal.get(Calendar.SECOND)
         val intoHour = min * 60 + sec
+        val isWeekend = dow == Calendar.SATURDAY || dow == Calendar.SUNDAY
+        if (isWeekend) {
+            // 到周一 9:00
+            val daysToMon = if (dow == Calendar.SATURDAY) 2 else 1
+            return (daysToMon * 86400L + (9 * 3600) - intoHour)
+        }
         return when {
             hour in 9 until 12 -> (12 * 3600 - intoHour).toLong()
             hour in 12 until 14 -> (14 * 3600 - intoHour).toLong()

@@ -41,7 +41,8 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = 20.dp)
+                    .scrollBar(listState),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
             ) {
                 itemsIndexed(sessions) { _, s ->

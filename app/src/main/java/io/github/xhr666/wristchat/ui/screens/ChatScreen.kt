@@ -93,7 +93,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).scrollBar(listState),
                 contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
             ) {
                 itemsIndexed(messages) { i, m -> MessageItem(m) }
@@ -219,6 +219,8 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     var text by remember { mutableStateOf(vm.draft.value ?: "") }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    PagerLock.locked = true
+    DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(200)

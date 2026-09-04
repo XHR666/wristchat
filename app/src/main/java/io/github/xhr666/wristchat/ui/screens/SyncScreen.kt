@@ -2,6 +2,7 @@ package io.github.xhr666.wristchat.ui.screens
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
@@ -63,7 +64,9 @@ fun SyncOverlay(settings: SettingsStore, vm: SettingsViewModel, onClose: () -> U
         Modifier
             .fillMaxSize()
             .background(c.bg)
-            .padding(horizontal = 22.dp, vertical = 10.dp),
+            .verticalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(horizontal = 22.dp, vertical = 10.dp)
+            .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -61,7 +61,7 @@ fun HomePager(settings: SettingsStore) {
         androidx.lifecycle.viewmodel.compose.viewModel(factory = io.github.xhr666.wristchat.ui.chat.ChatViewModelFactory(app))
 
     CompositionLocalProvider(LocalCurrentPage provides currentPage) {
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        HorizontalPager(state = pagerState, userScrollEnabled = !PagerLock.locked, modifier = Modifier.fillMaxSize()) { page ->
             when (page) {
                 0 -> SessionsScreen(settings, chatVm, onOpenChat = { scope.launch { pagerState.animateScrollToPage(1) } })
                 1 -> ChatScreen(settings, chatVm)

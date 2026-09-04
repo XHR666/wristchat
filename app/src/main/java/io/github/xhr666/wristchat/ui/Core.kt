@@ -2,24 +2,28 @@ package io.github.xhr666.wristchat.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -43,12 +47,16 @@ val Amoled = WristColors(Color.Black, Color(0xFF11161A), Color(0xFFE8EAED), Colo
     Color(0xFF4D9FFF), Color(0xFF14304F), Color(0xFF11161A), Color(0xFF1D242A))
 val LocalWrist = staticCompositionLocalOf { Amoled }
 
-object RotaryBus {
-    val flow = MutableSharedFlow<Int>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    fun emit(delta: Int) { flow.tryEmit(delta) }
+/** 全屏覆盖层(分类/同步/输入)打开时锁定横向翻页 */
+object PagerLock {
+    var locked by mutableStateOf(false)
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+object RotaryBus {
+    val flow = MutableSharedFlow<Int>(extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    fun emit(delta: Int) { flow.tryEmit(delta.coerceIn(-32, 32)) }
+}
+
 @Composable
 fun RotaryList(listState: LazyListState, enabled: Boolean) {
     LaunchedEffect(enabled) {
@@ -68,14 +76,14 @@ fun ScreenScaffold(
     val c = LocalWrist.current
     BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
         val w = maxWidth; val h = maxHeight
-        Column(Modifier.fillMaxSize()) {
-            val inset = roundInset(w, h, 24.dp + 21.dp)
+        Column(Modifier.fillMaxSize().padding(top = 12.dp)) {
+            val inset = roundInset(w, h, 12.dp + 20.dp)
             Row(
-                Modifier.fillMaxWidth().height(42.dp).padding(start = inset + 6.dp, end = inset + 6.dp),
+                Modifier.fillMaxWidth().height(40.dp).padding(start = inset + 6.dp, end = inset + 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (showTimeAlways || showTimeAtTop) {
-                    Text(TextTime.now(), color = c.hint, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    Text(TextTime.now(), color = c.hint, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(end = 6.dp))
                 }
                 Text(title, color = c.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
@@ -90,6 +98,25 @@ fun ScreenScaffold(
 object TextTime {
     private val fmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
     fun now(): String = fmt.format(java.util.Date())
+}
+
+/** 水平左滑返回容器:左滑超过阈值触发返回(并吞掉横向手势防误翻页) */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun SwipeBack(onBack: () -> Unit, content: @Composable () -> Unit) {
+    var acc by remember { mutableStateOf(0f) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(onBack) {
+                detectHorizontalDragGestures(
+                    onDragStart = { acc = 0f },
+                    onHorizontalDrag = { _, amount -> acc += amount },
+                    onDragEnd = { if (acc < -90f) onBack(); acc = 0f },
+                    onDragCancel = { acc = 0f },
+                )
+            },
+    ) { content() }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -116,6 +143,7 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
 @Composable
 fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     val c = LocalWrist.current
+    var on by remember { mutableStateOf(checked) }
     Row(
         modifier
             .fillMaxWidth()
@@ -123,12 +151,28 @@ fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onCh
             .clip(RoundedCornerShape(14.dp))
             .background(c.surface)
             .border(1.dp, c.border, RoundedCornerShape(14.dp))
-            .clickable { onChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 4.dp),
+            .padding(horizontal = 14.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        SmallToggle(on, onChange = { v -> on = v; onChange(v) })
+    }
+}
+
+/** 小号胶囊开关 */
+@Composable
+fun SmallToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
+    val c = LocalWrist.current
+    Box(
+        Modifier
+            .width(26.dp).height(15.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (checked) c.accent else c.hint.copy(alpha = 0.4f))
+            .clickable { onChange(!checked) }
+            .padding(2.dp),
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Box(Modifier.size(11.dp).clip(RoundedCornerShape(6.dp)).background(Color.White))
     }
 }
 
@@ -167,7 +211,7 @@ fun WChoice(title: String, items: List<String>, checked: Int, onPick: (Int) -> U
         onDismissRequest = onCancel,
         title = { Text(title, fontSize = 15.sp) },
         text = {
-            Column {
+            Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
                 items.forEachIndexed { i, s ->
                     Text((if (i == checked) "● " else "○ ") + s,
                         color = if (i == checked) c.accent else c.text, fontSize = 14.sp,
@@ -209,3 +253,29 @@ fun roundInset(containerW: Dp, containerH: Dp, yCenterFromTop: Dp): Dp {
     val halfW = sqrt(r * r - dy * dy)
     return Dp((r - halfW).coerceAtLeast(0f))
 }
+
+/** 列表滚动进度条 */
+fun Modifier.scrollBar(state: LazyListState): Modifier = this.then(
+    Modifier.drawWithContent {
+        drawContent()
+        val info = state.layoutInfo
+        if (info.totalItemsCount > 0) {
+            val first = info.visibleItemsInfo.firstOrNull()
+            val perItem = (first?.size ?: 0).toFloat()
+            if (perItem <= 0f) return@drawWithContent
+            val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+            val contentH = info.totalItemsCount * perItem
+            if (contentH <= viewport) return@drawWithContent
+            val scrolled = state.firstVisibleItemIndex * perItem + info.viewportStartOffset
+            val progress = (scrolled / (contentH - viewport)).coerceIn(0f, 1f)
+            val barH = size.height * (viewport / contentH)
+            val top = (size.height - barH) * progress
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.5f),
+                topLeft = androidx.compose.ui.geometry.Offset(size.width - 6.dp.toPx(), top),
+                size = androidx.compose.ui.geometry.Size(3.dp.toPx(), barH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx()),
+            )
+        }
+    }
+)

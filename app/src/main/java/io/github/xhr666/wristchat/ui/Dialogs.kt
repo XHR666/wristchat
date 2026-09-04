@@ -1,6 +1,8 @@
 package io.github.xhr666.wristchat.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -73,7 +75,7 @@ fun WDialogHost(d: DialogController) {
                 onDismissRequest = { d.close() },
                 title = { Text(s.title, fontSize = 15.sp) },
                 text = {
-                    Column {
+                    Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
                         s.items.forEachIndexed { i, it ->
                             Text((if (i == s.checked) "● " else "○ ") + it,
                                 color = if (i == s.checked) c.accent else c.text, fontSize = 14.sp,
@@ -110,7 +112,7 @@ fun WDialogHost(d: DialogController) {
                 onDismissRequest = { d.close() },
                 title = { Text(s.title, fontSize = 15.sp) },
                 text = {
-                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
                         s.items.forEachIndexed { i, it ->
                             Text(it, color = c.text, fontSize = 14.sp,
                                 modifier = Modifier.fillMaxWidth().clickable { d.close(); s.onPick(i) }.padding(vertical = 8.dp))
@@ -130,7 +132,8 @@ fun WDialogHost(d: DialogController) {
             AlertDialog(
                 onDismissRequest = { d.close() },
                 title = { Text(s.title, fontSize = 15.sp) },
-                text = { Text(s.body, fontSize = 12.sp, modifier = Modifier.verticalScroll(rememberScrollState())) },
+                text = { Text(s.body, fontSize = 12.sp,
+                    modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) },
                 confirmButton = { TextButton(onClick = { d.close() }) { Text("关闭") } },
                 containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
             )

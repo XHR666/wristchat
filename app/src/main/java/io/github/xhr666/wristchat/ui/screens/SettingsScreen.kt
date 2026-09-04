@@ -63,7 +63,7 @@ fun SettingsMenuScreen(settings: SettingsStore) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().background(Color(0xFF3D2E14)).padding(6.dp))
             LazyColumn(state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp).scrollBar(listState),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)) {
                 items(CATS) { cat -> WCard(cat.title, cat.desc) { openCat = cat.key } }
             }
@@ -79,12 +79,17 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
     var syncOpen by remember { mutableStateOf(false) }
 
     if (syncOpen) {
+        PagerLock.locked = true
+        DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
         SyncOverlay(settings, vm) { syncOpen = false }
         return
     }
+    LaunchedEffect(Unit) { PagerLock.locked = true }
+    DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
 
-    ScreenScaffold(title = CAT_TITLE[cat] ?: "设置", actions = { SmallAction("‹") { onBack() } }) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
+    SwipeBack(onBack) {
+        ScreenScaffold(title = CAT_TITLE[cat] ?: "设置", actions = { SmallAction("‹") { onBack() } }) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp).scrollBar(listState),
             contentPadding = PaddingValues(top = 4.dp, bottom = 14.dp)) {
             when (cat) {
                 "service" -> serviceRows(settings, dialogs)
@@ -98,15 +103,16 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                 "about" -> aboutRows(settings, vm, dialogs)
             }
         }
-        RotaryList(listState, enabled = LocalCurrentPage.current == 3)
+            RotaryList(listState, enabled = LocalCurrentPage.current == 3)
+        }
+        WDialogHost(dialogs)
     }
-    WDialogHost(dialogs)
 }
 
 // ---------- 各行内容 ----------
 private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
     item { WCard("服务商", Providers.byId(s.providerId).name) {
-        val ids = listOf("deepseek", "qwen", "custom")
+        val ids = listOf("deepseek", "qwen", "glm", "kimi", "volcano", "custom")
         d.choice("服务商", ids.map { Providers.byId(it).name }, ids.indexOf(s.providerId).coerceAtLeast(0)) { i ->
             s.providerId = ids[i]
             if (ids[i] != "custom") { val p = Providers.byId(ids[i]); s.baseUrl = p.defaultBaseUrl; s.apiPath = p.defaultPath }

@@ -14,6 +14,9 @@ data class ProviderConfig(
 object Providers {
     const val DEEPSEEK = "deepseek"
     const val QWEN = "qwen"
+    const val GLM = "glm"
+    const val KIMI = "kimi"
+    const val VOLCANO = "volcano"
     const val CUSTOM = "custom"
 
     val deepseek = ProviderConfig(
@@ -33,12 +36,39 @@ object Providers {
         supportsBalance = false,
         models = listOf("qwen-max", "qwen-plus", "qwen-turbo"),
     )
+    val glm = ProviderConfig(
+        id = GLM,
+        name = "智谱 GLM",
+        defaultBaseUrl = "https://open.bigmodel.cn/api/paas/v4",
+        defaultPath = "/chat/completions",
+        supportsBalance = false,
+        models = listOf("glm-4-plus", "glm-4-air", "glm-4-flash"),
+    )
+    val kimi = ProviderConfig(
+        id = KIMI,
+        name = "Kimi",
+        defaultBaseUrl = "https://api.moonshot.cn/v1",
+        defaultPath = "/chat/completions",
+        supportsBalance = false,
+        models = listOf("moonshot-v1-8k", "kimi-k2-turbo-preview", "moonshot-v1-32k"),
+    )
+    val volcano = ProviderConfig(
+        id = VOLCANO,
+        name = "火山方舟",
+        defaultBaseUrl = "https://ark.cn-beijing.volces.com/api/v3",
+        defaultPath = "/chat/completions",
+        supportsBalance = false,
+        models = listOf("doubao-1-5-pro-32k-250115"),
+    )
 
-    fun all(): List<ProviderConfig> = listOf(deepseek, qwen)
+    fun all(): List<ProviderConfig> = listOf(deepseek, qwen, glm, kimi, volcano)
 
     fun byId(id: String): ProviderConfig = when (id) {
         DEEPSEEK -> deepseek
         QWEN -> qwen
+        GLM -> glm
+        KIMI -> kimi
+        VOLCANO -> volcano
         else -> ProviderConfig(
             id = CUSTOM,
             name = "自定义",
