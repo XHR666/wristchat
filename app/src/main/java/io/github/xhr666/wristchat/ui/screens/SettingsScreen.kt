@@ -90,26 +90,26 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
     LaunchedEffect(Unit) { PagerLock.locked = true }
     DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
 
-    SwipeBack(onBack) {
-        ScreenScaffold(title = CAT_TITLE[cat] ?: "设置", actions = { SmallAction("‹") { onBack() } }) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp).scrollArc(listState),
-            contentPadding = PaddingValues(top = 4.dp, bottom = 14.dp)) {
-            when (cat) {
-                "service" -> serviceRows(settings, dialogs)
-                "model" -> modelRows(settings, dialogs)
-                "quick" -> quickRows(settings, dialogs)
-                "skills_memory" -> skillRows(settings, vm, dialogs)
-                "sessions" -> sessionRows(settings, vm, dialogs)
-                "storage" -> storageRows(settings, vm, dialogs)
-                "update" -> updateRows(settings, dialogs) { syncOpen = true }
-                "security" -> securityRows(settings, dialogs)
-                "about" -> aboutRows(settings, vm, dialogs)
+    ScreenScaffold(title = CAT_TITLE[cat] ?: "设置",
+        actions = { SmallAction("‹") { onBack() } },
+        onHeaderSwipeBack = onBack) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp).scrollArc(listState),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 14.dp)) {
+                when (cat) {
+                    "service" -> serviceRows(settings, dialogs)
+                    "model" -> modelRows(settings, dialogs)
+                    "quick" -> quickRows(settings, dialogs)
+                    "skills_memory" -> skillRows(settings, vm, dialogs)
+                    "sessions" -> sessionRows(settings, vm, dialogs)
+                    "storage" -> storageRows(settings, vm, dialogs)
+                    "update" -> updateRows(settings, dialogs) { syncOpen = true }
+                    "security" -> securityRows(settings, dialogs)
+                    "about" -> aboutRows(settings, vm, dialogs)
+                }
             }
-        }
             RotaryList(listState, enabled = LocalCurrentPage.current == 3)
         }
         WDialogHost(dialogs)
-    }
 }
 
 // ---------- 各行内容 ----------

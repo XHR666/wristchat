@@ -72,7 +72,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             SmallAction("⟳") { newSessionAsk = true }
         },
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(bottom = 10.dp)) {
             if (quickPanel) {
                 Column(
                     Modifier

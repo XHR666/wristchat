@@ -24,6 +24,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -65,12 +67,14 @@ fun RotaryList(listState: LazyListState, enabled: Boolean) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ScreenScaffold(
     title: String,
     showTimeAlways: Boolean = false,
     showTimeAtTop: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
+    onHeaderSwipeBack: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val c = LocalWrist.current
@@ -78,10 +82,19 @@ fun ScreenScaffold(
         val w = maxWidth; val h = maxHeight
         Column(Modifier.fillMaxSize().padding(top = 12.dp)) {
             val inset = roundInset(w, h, 12.dp + 20.dp)
-            Row(
-                Modifier.fillMaxWidth().height(40.dp).padding(start = inset + 6.dp, end = inset + 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            var swipeAcc by remember { mutableStateOf(0f) }
+            var rowMod = Modifier.fillMaxWidth().height(40.dp).padding(start = inset + 6.dp, end = inset + 6.dp)
+            if (onHeaderSwipeBack != null) {
+                rowMod = rowMod.pointerInput(onHeaderSwipeBack) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { swipeAcc = 0f },
+                        onHorizontalDrag = { _, amount -> swipeAcc += amount },
+                        onDragEnd = { if (swipeAcc < -80f) onHeaderSwipeBack(); swipeAcc = 0f },
+                        onDragCancel = { swipeAcc = 0f },
+                    )
+                }
+            }
+            Row(rowMod, verticalAlignment = Alignment.CenterVertically) {
                 if (showTimeAlways || showTimeAtTop) {
                     Text(TextTime.now(), color = c.hint, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(end = 6.dp))
@@ -265,9 +278,15 @@ fun Modifier.scrollBar(state: LazyListState): Modifier = this.then(
     }
 )
 
-/** 弧形滚动进度(沿圆右侧内弧,仿微思) */
-fun Modifier.scrollArc(state: LazyListState): Modifier = this.then(
-    Modifier.drawWithContent {
+/** 弧形滚动进度:贴屏幕圆边(全屏中心),进度线性(仿微思侧边弧形) */
+@Composable
+fun Modifier.scrollArc(state: androidx.compose.foundation.lazy.LazyListState): Modifier {
+    val cfg = androidx.compose.ui.platform.LocalConfiguration.current
+    val den = androidx.compose.ui.platform.LocalDensity.current
+    val wPx = with(den) { cfg.screenWidthDp.dp.toPx() }
+    val hPx = with(den) { cfg.screenHeightDp.dp.toPx() }
+    val dot = with(den) { 1.dp.toPx() }
+    return this.then(Modifier.drawWithContent {
         drawContent()
         val info = state.layoutInfo
         if (info.totalItemsCount == 0) return@drawWithContent
@@ -279,25 +298,33 @@ fun Modifier.scrollArc(state: LazyListState): Modifier = this.then(
         if (contentH <= viewport) return@drawWithContent
         val scrolled = state.firstVisibleItemIndex * perItem + info.viewportStartOffset
         val progress = (scrolled / (contentH - viewport)).coerceIn(0f, 1f)
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val radius = minOf(size.width, size.height) / 2f - 8.dp.toPx()
-        val sweepTotal = 150f
-        val startDeg = -75f
-        val cap = androidx.compose.ui.graphics.StrokeCap.Round
+        val radius = minOf(wPx, hPx) / 2f - 10f * den.density
+        val cx = wPx / 2f
+        val cy = hPx / 2f
+        val sweepTotal = 140f
+        val start = -70f  // 右上起,顺时针扫向右侧
         drawArc(
-            color = Color.White.copy(alpha = 0.08f),
-            startAngle = startDeg, sweepAngle = sweepTotal, useCenter = false,
+            color = Color.White.copy(alpha = 0.10f),
+            startAngle = start, sweepAngle = sweepTotal, useCenter = false,
             topLeft = androidx.compose.ui.geometry.Offset(cx - radius, cy - radius),
             size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = cap),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f * den.density, cap = androidx.compose.ui.graphics.StrokeCap.Round),
         )
         drawArc(
             color = Color.White.copy(alpha = 0.7f),
-            startAngle = startDeg, sweepAngle = sweepTotal * progress, useCenter = false,
+            startAngle = start, sweepAngle = sweepTotal * progress, useCenter = false,
             topLeft = androidx.compose.ui.geometry.Offset(cx - radius, cy - radius),
             size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = cap),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f * den.density, cap = androidx.compose.ui.graphics.StrokeCap.Round),
         )
-    }
-)
+        // 进度从顶部到右:起点跟随进度更直观(微思式:拇指沿弧走)
+        drawCircle(
+            color = Color.White,
+            radius = 3.5f * den.density,
+            center = androidx.compose.ui.geometry.Offset(
+                cx + radius * kotlin.math.cos(Math.toRadians((start + sweepTotal * progress).toDouble())).toFloat(),
+                cy + radius * kotlin.math.sin(Math.toRadians((start + sweepTotal * progress).toDouble())).toFloat(),
+            ),
+        )
+    })
+}
