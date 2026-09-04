@@ -66,7 +66,7 @@ fun SettingsMenuScreen(settings: SettingsStore) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().background(Color(0xFF3D2E14)).padding(6.dp))
             LazyColumn(state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp).scrollBar(listState),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp).scrollArc(listState),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)) {
                 items(CATS) { cat -> WCard(cat.title, cat.desc) { openCat = cat.key } }
             }
@@ -92,7 +92,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
 
     SwipeBack(onBack) {
         ScreenScaffold(title = CAT_TITLE[cat] ?: "设置", actions = { SmallAction("‹") { onBack() } }) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp).scrollBar(listState),
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp).scrollArc(listState),
             contentPadding = PaddingValues(top = 4.dp, bottom = 14.dp)) {
             when (cat) {
                 "service" -> serviceRows(settings, dialogs)
@@ -124,7 +124,9 @@ private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
     item { WCard("API Key", if (s.apiKey.isBlank()) "(未设置)" else "已设置 · ${s.apiKey.takeLast(4)}") {
         d.input("API Key", s.apiKey, pw = true) { s.apiKey = it }
     } }
-    item { WCard("平台 Token(可选)", if (s.platformToken.isBlank()) "(未设置)" else "已设置") {
+    item { WCard("平台 Token(可选)",
+        (if (s.platformToken.isBlank()) "(未设置)\n" else "已设置\n") +
+        "用途:余额页「今日已用」实时查询\n获取:DeepSeek 开放平台网页登录后,浏览器开发者工具里复制 Authorization 的 Bearer 值\n留空:自动用余额差值本地估算") {
         d.input("平台 Token", s.platformToken, pw = true) { s.platformToken = it }
     } }
     item { WCard("API Base URL", s.baseUrl.ifBlank { Providers.byId(s.providerId).defaultBaseUrl }) {

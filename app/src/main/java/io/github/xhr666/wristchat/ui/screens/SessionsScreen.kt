@@ -42,7 +42,7 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 20.dp)
-                    .scrollBar(listState),
+                    .scrollArc(listState),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
             ) {
                 itemsIndexed(sessions) { _, s ->
@@ -58,11 +58,13 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
                 }
                 item { Spacer(Modifier.height(4.dp)) }
             }
-            // 提示
+            // 提示(居中于列表区,避开底部圆边)
             if (sessions.isEmpty()) {
-                Text("暂无会话\n去聊天页开始第一段对话", color = c.hint, fontSize = 12.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.align(Alignment.CenterHorizontally))
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("暂无会话\n去聊天页开始第一段对话", color = c.hint, fontSize = 12.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 30.dp))
+                }
             }
         }
         RotaryList(listState, enabled = currentPage == 0)

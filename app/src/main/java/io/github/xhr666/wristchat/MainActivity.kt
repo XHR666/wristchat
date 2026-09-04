@@ -40,7 +40,10 @@ class MainActivity : ComponentActivity() {
         if (ev.action == MotionEvent.ACTION_SCROLL) {
             val raw = -ev.getAxisValue(MotionEvent.AXIS_VSCROLL)
             if (kotlin.math.abs(raw) > 0.05f) {
-                RotaryBus.emit((raw * 16f).toInt().coerceIn(-24, 24))
+                val sign = if (raw > 0) 1 else -1
+                val mag = kotlin.math.abs(raw).coerceIn(0f, 3f)
+                // 步长≈12~24:低频小步,高频事件多自然快;速度由事件频率主导
+                RotaryBus.emit(sign * (12 + (mag * 4f).toInt()).coerceAtMost(24))
             }
             return true
         }

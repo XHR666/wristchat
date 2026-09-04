@@ -4,16 +4,17 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.Executors
 
 /**
  * 手机同步:手表端临时 HTTP 服务(仅局域网,带 PIN)。
- * GET / -> 配置页 HTML;GET /api/config?pin= -> 当前设置;POST /api/save?pin= -> 保存设置。
- * 仅在前台页面开启,3 分钟无请求自动关闭(由调用方计时)。
+ * GET / -> 配置页;GET /api/config?pin= -> 当前设置;POST /api/save?pin= -> 保存。
+ * 前台页面开启,离开即停。
  */
 class SyncServer(
     private val pin: String,
-    private val readConfig: () -> String,          // JSON string of current settings
-    private val applyConfig: (String) -> String,   // JSON body -> ok msg or error
+    private val readConfig: () -> String,
+    private val applyConfig: (String) -> String,
 ) {
     @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var running = false
@@ -27,7 +28,7 @@ class SyncServer(
             serverSocket = ServerSocket(0)
             port = serverSocket!!.localPort
             running = true
-            pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+            pool = Executors.newFixedThreadPool(2)
             thread = Thread { acceptLoop() }.apply { isDaemon = true; start() }
             true
         } catch (e: Exception) {
@@ -60,14 +61,12 @@ class SyncServer(
 
     private fun handle(socket: Socket) {
         try {
-            socket.soTimeout = 15000
+            socket.soTimeout = 20000
             val input = socket.getInputStream().bufferedReader()
             val requestLine = input.readLine() ?: return
             val parts = requestLine.split(" ")
             if (parts.size < 2) return
-            val method = parts[0]
             val path = parts[1]
-            // 读 headers
             var contentLength = 0
             while (true) {
                 val line = input.readLine() ?: break
@@ -86,7 +85,7 @@ class SyncServer(
             val response = when {
                 path.startsWith("/api/config") -> handleConfig(path)
                 path.startsWith("/api/save") -> handleSave(path, body)
-                else -> handleHtml()
+                else -> PAGE_HTML
             }
             val contentType = if (path.startsWith("/api/")) "application/json; charset=utf-8" else "text/html; charset=utf-8"
             val out = socket.getOutputStream()
@@ -117,27 +116,31 @@ class SyncServer(
         return org.json.JSONObject().put("ok", true).put("message", result).toString()
     }
 
-    private fun handleHtml(): String = PAGE_HTML
-
     companion object {
         private val PAGE_HTML = """
 <!DOCTYPE html>
-<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>WristChat 同步</title>
 <style>
-body{font-family:system-ui,sans-serif;background:#0f1419;color:#e8eaed;max-width:480px;margin:0 auto;padding:16px}
-h1{font-size:20px} h2{font-size:15px;margin:18px 0 8px;color:#9aa4af}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,system-ui,"PingFang SC","Microsoft YaHei",sans-serif;background:#0f1419;color:#e8eaed;min-height:100vh;display:flex;flex-direction:column;padding:16px;font-size:16px}
+h1{font-size:20px;margin:6px 0 4px;text-align:center}
+h2{font-size:15px;margin:20px 0 6px;color:#9aa4af}
+.sub{color:#9aa4af;font-size:13px;text-align:center;margin-bottom:14px}
 label{display:block;font-size:13px;margin:10px 0 4px;color:#c3cbd4}
-input,select,textarea{width:100%;box-sizing:border-box;background:#1b2228;border:1px solid #333c44;color:#e8eaed;border-radius:8px;padding:10px;font-size:15px}
-button{width:100%;padding:12px;margin-top:16px;background:#4d9fff;border:none;border-radius:8px;color:#fff;font-size:16px;font-weight:600}
-button:active{opacity:.8}
-#msg{margin-top:12px;padding:10px;border-radius:8px;display:none}
+input,select,textarea{width:100%;background:#1b2228;border:1px solid #3a4450;color:#e8eaed;border-radius:10px;padding:12px;font-size:17px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#4d9fff}
+button{width:100%;padding:14px;margin-top:14px;background:#4d9fff;border:none;border-radius:10px;color:#fff;font-size:18px;font-weight:600}
+button:active{opacity:.85}
+#msg,#msg2{margin-top:12px;padding:10px;border-radius:10px;text-align:center;display:none}
 .ok{background:#143d26;color:#7dffa8}.err{background:#3d1414;color:#ff9d9d}
-.pinbox{display:flex;gap:8px}.pinbox input{flex:1}
 </style></head><body>
-<h1>🖐 WristChat 手机同步</h1>
-<div class="pinbox"><input id="pin" type="password" placeholder="输入手表上显示的 4 位密钥" inputmode="numeric"><button onclick="load()" style="margin-top:0">连接</button></div>
-<p style="color:#9aa4af;font-size:12px">先输入密钥才能查看和修改设置</p>
+<h1>WristChat 同步</h1>
+<p class="sub">先输入手表上显示的 4 位密钥,才能查看/修改设置</p>
+<input id="pin" type="password" placeholder="4 位密钥" inputmode="numeric" autocomplete="off" style="text-align:center;font-size:24px;letter-spacing:8px">
+<button onclick="load()" style="margin-top:10px">连接</button>
+<div id="msg"></div>
 <div id="form" style="display:none">
 <h2>对话参数</h2>
 <label>温度 (0-2)</label><input id="temperature" type="number" step="0.1" min="0" max="2">
@@ -147,46 +150,45 @@ button:active{opacity:.8}
 <label>思考强度</label><select id="effort"><option value="low">低</option><option value="high">高</option><option value="max">最大</option></select>
 <label>模型</label><input id="model" placeholder="deepseek-v4-flash">
 <h2>服务</h2>
-<label>Provider</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="qwen">通义千问</option><option value="custom">自定义</option></select>
+<label>服务商</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="qwen">通义千问</option><option value="glm">智谱 GLM</option><option value="kimi">Kimi</option><option value="volcano">火山方舟</option><option value="custom">自定义</option></select>
 <label>API Base URL</label><input id="baseUrl" placeholder="https://api.deepseek.com">
 <label>API 路径</label><input id="apiPath" placeholder="/chat/completions">
 <label>API Key(留空保持不变)</label><input id="apiKey" type="password" placeholder="sk-...">
 <h2>系统提示与技能</h2>
-<label>自定义系统 Prompt</label><textarea id="customPrompt" rows="3"></textarea>
-<label>导入技能(粘贴 SKILL.md 内容,留空跳过)</label><textarea id="skillContent" rows="3" placeholder="---&#10;name: xxx&#10;description: xxx&#10;---&#10;指令内容"></textarea>
+<label>自定义系统 Prompt</label><textarea id="customPrompt" rows="4"></textarea>
+<label>导入技能(SKILL.md,留空跳过)</label><textarea id="skillContent" rows="4" placeholder="---&#10;name: xxx&#10;description: xxx&#10;---&#10;指令内容"></textarea>
 <label>技能文件名(可选)</label><input id="skillName" placeholder="myskill.md">
 <h2>快捷输入(每行一条)</h2>
 <textarea id="quickInputs" rows="4"></textarea>
-<h2>导入聊天记录(备用通道)</h2>
-<label>粘贴聊天 JSON / 文本(user:/assistant: 前缀),留空跳过</label>
+<h2>导入聊天记录(可选)</h2>
+<label>粘贴聊天 JSON/文本,保存即导入</label>
 <textarea id="chatImport" rows="4" placeholder='{"messages":[{"role":"user","content":"hi"}]}'></textarea>
 <button onclick="save()">保存到手表</button>
-<div id="msg"></div>
+<div id="msg2"></div>
 </div>
 <script>
-var CUR_PIN='';
+var CUR='';
+function show(m,cls,target){var el=document.getElementById(target||'msg');el.textContent=m;el.className=cls;el.style.display='block';setTimeout(function(){el.style.display='none'},5000)}
 function load(){
-  CUR_PIN=document.getElementById('pin').value;
-  if(CUR_PIN.length<4){show('请输入 4 位 PIN','err');return}
-  fetch('/api/config?pin='+CUR_PIN).then(r=>r.json()).then(j=>{
-    if(!j.ok){show(j.error||'连接失败','err');return}
+  CUR=document.getElementById('pin').value.trim();
+  if(CUR.length!==4){show('请输入 4 位密钥','err');return}
+  show('连接中…','ok');
+  fetch('/api/config?pin='+CUR).then(function(r){return r.json()}).then(function(j){
+    if(!j.ok){show(j.error||'密钥错误','err');return}
     var c=j.config;
-    document.getElementById('temperature').value=c.temperature;
-    document.getElementById('topP').value=c.topP;
-    document.getElementById('maxTokens').value=c.maxTokens;
+    set('temperature',c.temperature);set('topP',c.topP);set('maxTokens',c.maxTokens);
     document.getElementById('thinking').value=String(c.thinking);
     document.getElementById('effort').value=c.effort;
-    document.getElementById('model').value=c.model;
-    document.getElementById('provider').value=c.provider;
-    document.getElementById('baseUrl').value=c.baseUrl;
-    document.getElementById('apiPath').value=c.apiPath;
-    document.getElementById('customPrompt').value=c.customPrompt;
+    set('model',c.model);set('provider',c.provider);set('baseUrl',c.baseUrl);set('apiPath',c.apiPath);
+    set('customPrompt',c.customPrompt);
     document.getElementById('quickInputs').value=(c.quickInputs||[]).join('\n');
     document.getElementById('form').style.display='block';
     show('已连接','ok');
-  }).catch(()=>show('无法连接,检查手表和手机是否同一网络','err'));
+  }).catch(function(){show('无法连接,确认手机与手表同一网络','err')});
 }
+function set(id,v){var el=document.getElementById(id);if(el){el.value=(v===undefined||v===null)?'':v}}
 function save(){
+  if(CUR.length!==4){show('请先连接','err','msg2');return}
   var body={
     temperature:parseFloat(document.getElementById('temperature').value)||1,
     topP:parseFloat(document.getElementById('topP').value)||1,
@@ -198,18 +200,17 @@ function save(){
     baseUrl:document.getElementById('baseUrl').value.trim(),
     apiPath:document.getElementById('apiPath').value.trim(),
     customPrompt:document.getElementById('customPrompt').value,
-    quickInputs:document.getElementById('quickInputs').value.split('\n').map(s=>s.trim()).filter(Boolean),
+    quickInputs:document.getElementById('quickInputs').value.split('\n').map(function(x){return x.trim()}).filter(Boolean),
     apiKey:document.getElementById('apiKey').value.trim(),
     skillName:document.getElementById('skillName').value.trim(),
     skillContent:document.getElementById('skillContent').value,
     chatImport:document.getElementById('chatImport').value
   };
-  fetch('/api/save?pin='+CUR_PIN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-    .then(r=>r.json()).then(j=>{show(j.ok?('已保存: '+j.message):(j.error||'保存失败'),j.ok?'ok':'err')})
-    .catch(()=>show('保存失败:网络错误','err'));
+  fetch('/api/save?pin='+CUR,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){return r.json()}).then(function(j){show(j.ok?('已保存: '+j.message):(j.error||'保存失败'),j.ok?'ok':'err','msg2')})
+    .catch(function(){show('保存失败:网络错误','err','msg2')});
 }
-function show(t,cls){var m=document.getElementById('msg');m.textContent=t;m.className=cls;m.style.display='block';setTimeout(()=>m.style.display='none',4000)}
 </script></body></html>
-        """.trimIndent()
+        """
     }
 }

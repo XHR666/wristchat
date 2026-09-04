@@ -93,8 +93,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f).scrollBar(listState),
-                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
+                modifier = Modifier.weight(1f).scrollArc(listState),
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 10.dp),
             ) {
                 itemsIndexed(messages) { i, m -> MessageItem(m) }
                 if (sending) item { Text("思考中…", color = c.hint, fontSize = 12.sp) }
@@ -102,10 +102,11 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 30.dp)
                     .background(c.surface)
                     .border(1.dp, c.border)
                     .clickable { fullscreenInput = true }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text((vm.draft.value ?: "").ifEmpty { "输入消息…" },

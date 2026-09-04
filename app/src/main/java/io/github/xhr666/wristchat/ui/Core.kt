@@ -100,23 +100,26 @@ object TextTime {
     fun now(): String = fmt.format(java.util.Date())
 }
 
-/** 水平左滑返回容器:左滑超过阈值触发返回(并吞掉横向手势防误翻页) */
+/** 水平左滑返回容器:透明覆盖层在内容之上抓横向拖拽(点击仍透传,竖向滚动透传给列表) */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SwipeBack(onBack: () -> Unit, content: @Composable () -> Unit) {
     var acc by remember { mutableStateOf(0f) }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .pointerInput(onBack) {
-                detectHorizontalDragGestures(
-                    onDragStart = { acc = 0f },
-                    onHorizontalDrag = { _, amount -> acc += amount },
-                    onDragEnd = { if (acc < -90f) onBack(); acc = 0f },
-                    onDragCancel = { acc = 0f },
-                )
-            },
-    ) { content() }
+    Box(Modifier.fillMaxSize()) {
+        content()
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(onBack) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { acc = 0f },
+                        onHorizontalDrag = { _, amount -> acc += amount },
+                        onDragEnd = { if (acc < -80f) onBack(); acc = 0f },
+                        onDragCancel = { acc = 0f },
+                    )
+                },
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -194,55 +197,36 @@ fun WConfirm(title: String, message: String, okText: String = "确定", cancelTe
              countdown: Int = 0, onOk: () -> Unit, onCancel: () -> Unit = {}) {
     var remain by remember { mutableStateOf(countdown) }
     LaunchedEffect(countdown) { if (countdown > 0) while (remain > 0) { kotlinx.coroutines.delay(1000); remain-- } }
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(title, fontSize = 15.sp) },
-        text = { Text(message, fontSize = 13.sp) },
-        confirmButton = { TextButton(onClick = onOk, enabled = remain <= 0) { Text(if (remain > 0) "$okText($remain)" else okText) } },
-        dismissButton = { if (cancelText.isNotEmpty()) TextButton(onClick = onCancel) { Text(cancelText) } },
-        containerColor = MaterialTheme.colorScheme.surface,
-    )
+    val c = LocalWrist.current
+    CompactDialog(title = title, onDismiss = onCancel,
+        confirmText = okText, confirmEnabled = remain <= 0,
+        onConfirm = onOk, dismissText = cancelText) {
+        Text(if (remain > 0) "$message\n(确定在 ${remain}s 后可用)" else message,
+            color = c.text, fontSize = 13.sp, lineHeight = 18.sp)
+    }
 }
 
 @Composable
 fun WChoice(title: String, items: List<String>, checked: Int, onPick: (Int) -> Unit, onCancel: () -> Unit = {}) {
-    val c = LocalWrist.current
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(title, fontSize = 15.sp) },
-        text = {
-            Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                items.forEachIndexed { i, s ->
-                    Text((if (i == checked) "● " else "○ ") + s,
-                        color = if (i == checked) c.accent else c.text, fontSize = 14.sp,
-                        modifier = Modifier.fillMaxWidth().clickable { onPick(i) }.padding(vertical = 8.dp))
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } },
-        containerColor = MaterialTheme.colorScheme.surface,
-    )
+    CompactDialog(title = title, onDismiss = onCancel, dismissText = "取消") {
+        CompactRows(items, checked, onPick)
+    }
 }
 
 @Composable
 fun WInput(title: String, initial: String, password: Boolean = false, multiline: Boolean = false,
            okText: String = "保存", onOk: (String) -> Unit, onCancel: () -> Unit = {}) {
     var v by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(title, fontSize = 15.sp) },
-        text = {
-            OutlinedTextField(
-                value = v, onValueChange = { if (it.length <= 8000) v = it },
-                singleLine = !multiline,
-                visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-            )
-        },
-        confirmButton = { TextButton(onClick = { onOk(v) }) { Text(okText) } },
-        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } },
-        containerColor = MaterialTheme.colorScheme.surface,
-    )
+    CompactDialog(title = title, onDismiss = onCancel,
+        confirmText = okText, onConfirm = { onOk(v) }, dismissText = "取消") {
+        androidx.compose.material3.OutlinedTextField(
+            value = v,
+            onValueChange = { if (it.length <= 8000) v = it },
+            singleLine = !multiline,
+            modifier = Modifier.fillMaxWidth(),
+            visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        )
+    }
 }
 
 fun roundInset(containerW: Dp, containerH: Dp, yCenterFromTop: Dp): Dp {
@@ -277,5 +261,42 @@ fun Modifier.scrollBar(state: LazyListState): Modifier = this.then(
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5.dp.toPx()),
             )
         }
+    }
+)
+
+/** 弧形滚动进度(沿圆右侧内弧,仿微思) */
+fun Modifier.scrollArc(state: LazyListState): Modifier = this.then(
+    Modifier.drawWithContent {
+        drawContent()
+        val info = state.layoutInfo
+        if (info.totalItemsCount == 0) return@drawWithContent
+        val first = info.visibleItemsInfo.firstOrNull()
+        val perItem = (first?.size ?: 0).toFloat()
+        if (perItem <= 0f) return@drawWithContent
+        val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+        val contentH = info.totalItemsCount * perItem
+        if (contentH <= viewport) return@drawWithContent
+        val scrolled = state.firstVisibleItemIndex * perItem + info.viewportStartOffset
+        val progress = (scrolled / (contentH - viewport)).coerceIn(0f, 1f)
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val radius = minOf(size.width, size.height) / 2f - 8.dp.toPx()
+        val sweepTotal = 150f
+        val startDeg = -75f
+        val cap = androidx.compose.ui.graphics.StrokeCap.Round
+        drawArc(
+            color = Color.White.copy(alpha = 0.08f),
+            startAngle = startDeg, sweepAngle = sweepTotal, useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(cx - radius, cy - radius),
+            size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = cap),
+        )
+        drawArc(
+            color = Color.White.copy(alpha = 0.7f),
+            startAngle = startDeg, sweepAngle = sweepTotal * progress, useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(cx - radius, cy - radius),
+            size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = cap),
+        )
     }
 )

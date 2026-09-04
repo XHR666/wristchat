@@ -13,5 +13,5 @@
     <color name="surface_amoled">#000000</color>
     <color name="hint_light">#8A9199</color>
     <color name="hint_dark">#6F7880</color>
-    <color name="icon_bg">#000000</color>
+    <color name="icon_bg">#1A2026</color>
 </resources>

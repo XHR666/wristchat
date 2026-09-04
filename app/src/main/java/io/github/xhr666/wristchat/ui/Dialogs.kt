@@ -60,83 +60,45 @@ fun WDialogHost(d: DialogController) {
         is WSpec.Confirm -> {
             var remain by remember { mutableStateOf(s.countdown) }
             LaunchedEffect(s.countdown) { if (s.countdown > 0) while (remain > 0) { kotlinx.coroutines.delay(1000); remain-- } }
-            AlertDialog(
-                onDismissRequest = { d.close(); s.onCancel() },
-                title = { Text(s.title, fontSize = 15.sp) },
-                text = { Text(s.message, fontSize = 13.sp) },
-                confirmButton = { TextButton(onClick = { d.close(); s.onOk() }, enabled = remain <= 0) { Text(if (remain > 0) "${s.ok}($remain)" else s.ok) } },
-                dismissButton = { TextButton(onClick = { d.close(); s.onCancel() }) { Text(s.cancel) } },
-                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-            )
-        }
-        is WSpec.Choice -> {
             val c = LocalWrist.current
-            AlertDialog(
-                onDismissRequest = { d.close() },
-                title = { Text(s.title, fontSize = 15.sp) },
-                text = {
-                    Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                        s.items.forEachIndexed { i, it ->
-                            Text((if (i == s.checked) "● " else "○ ") + it,
-                                color = if (i == s.checked) c.accent else c.text, fontSize = 14.sp,
-                                modifier = Modifier.fillMaxWidth().clickable { d.close(); s.onPick(i) }.padding(vertical = 8.dp))
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = { TextButton(onClick = { d.close() }) { Text("取消") } },
-                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-            )
+            CompactDialog(title = s.title, onDismiss = { d.close(); s.onCancel() },
+                confirmText = s.ok, confirmEnabled = remain <= 0,
+                onConfirm = { d.close(); s.onOk() },
+                dismissText = s.cancel.takeIf { it.isNotEmpty() }) {
+                Text((if (remain > 0) "$\n确定 ${remain}s 后可用" else "") + s.message,
+                    color = c.text, fontSize = 13.sp, lineHeight = 18.sp)
+            }
+        }
+        is WSpec.Choice -> CompactDialog(title = s.title, onDismiss = { d.close() }, dismissText = "取消") {
+            CompactRows(s.items, s.checked) { i -> d.close(); s.onPick(i) }
         }
         is WSpec.Input -> {
             var v by remember { mutableStateOf(s.initial) }
-            AlertDialog(
-                onDismissRequest = { d.close() },
-                title = { Text(s.title, fontSize = 15.sp) },
-                text = {
-                    OutlinedTextField(
-                        value = v, onValueChange = { if (it.length <= 8000) v = it },
-                        singleLine = !s.multiline,
-                        visualTransformation = if (s.password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-                        keyboardOptions = KeyboardOptions(keyboardType = if (s.password) KeyboardType.Password else KeyboardType.Text),
-                    )
-                },
-                confirmButton = { TextButton(onClick = { d.close(); s.onOk(v) }) { Text(s.ok) } },
-                dismissButton = { TextButton(onClick = { d.close() }) { Text("取消") } },
-                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-            )
+            CompactDialog(title = s.title, onDismiss = { d.close() },
+                confirmText = s.ok, onConfirm = { d.close(); s.onOk(v) }, dismissText = "取消") {
+                androidx.compose.material3.OutlinedTextField(
+                    value = v, onValueChange = { if (it.length <= 8000) v = it },
+                    singleLine = !s.multiline,
+                    visualTransformation = if (s.password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                )
+            }
         }
-        is WSpec.Items -> {
+        is WSpec.Items -> CompactDialog(title = s.title, onDismiss = { d.close() }, dismissText = "关闭") {
             val c = LocalWrist.current
-            AlertDialog(
-                onDismissRequest = { d.close() },
-                title = { Text(s.title, fontSize = 15.sp) },
-                text = {
-                    Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
-                        s.items.forEachIndexed { i, it ->
-                            Text(it, color = c.text, fontSize = 14.sp,
-                                modifier = Modifier.fillMaxWidth().clickable { d.close(); s.onPick(i) }.padding(vertical = 8.dp))
-                        }
-                        s.neutral?.let { n ->
-                            Text(n, color = c.accent, fontSize = 14.sp,
-                                modifier = Modifier.fillMaxWidth().clickable { d.close(); s.onNeutral?.invoke() }.padding(vertical = 8.dp))
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = { TextButton(onClick = { d.close() }) { Text("关闭") } },
-                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-            )
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                s.items.forEachIndexed { i, it ->
+                    Text(it, color = c.text, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().clickable { d.close(); s.onPick(i) }.padding(vertical = 7.dp))
+                }
+                s.neutral?.let { n ->
+                    Text(n, color = c.accent, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().clickable { d.close(); s.onNeutral?.invoke() }.padding(vertical = 7.dp))
+                }
+            }
         }
-        is WSpec.Text -> {
-            AlertDialog(
-                onDismissRequest = { d.close() },
-                title = { Text(s.title, fontSize = 15.sp) },
-                text = { Text(s.body, fontSize = 12.sp,
-                    modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) },
-                confirmButton = { TextButton(onClick = { d.close() }) { Text("关闭") } },
-                containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-            )
+        is WSpec.Text -> CompactDialog(title = s.title, onDismiss = { d.close() }, dismissText = "关闭") {
+            Text(s.body, color = LocalWrist.current.text, fontSize = 12.sp, lineHeight = 17.sp,
+                modifier = Modifier.verticalScroll(rememberScrollState()).padding(top = 4.dp))
         }
     }
 }

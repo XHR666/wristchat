@@ -35,7 +35,7 @@ fun SyncOverlay(settings: SettingsStore, vm: SettingsViewModel, onClose: () -> U
     var server by remember { mutableStateOf<SyncServer?>(null) }
     var url by remember { mutableStateOf("") }
     var qr by remember { mutableStateOf<Bitmap?>(null) }
-    var started by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("正在启动同步服务…") }
 
     DisposableEffect(Unit) {
         onDispose { server?.stop() }
@@ -50,13 +50,17 @@ fun SyncOverlay(settings: SettingsStore, vm: SettingsViewModel, onClose: () -> U
             applyConfig = { body -> applyConfigJson(settings, vm, body) },
         )
         if (svc.start()) {
-            val ip = svc.localIp() ?: "(未获取到 IP,请检查网络)"
-            url = "http://$ip:${svc.port}"
-            qr = QrUtil.generate(url, (150 * ctx.resources.displayMetrics.density).toInt())
             server = svc
-            started = true
+            val ip = svc.localIp()
+            if (ip == null) {
+                status = "已启动,但未取到 IP。请确认手表已连接 WiFi(手机需同网)"
+            } else {
+                url = "http://$ip:${svc.port}"
+                qr = QrUtil.generate(url, (150 * ctx.resources.displayMetrics.density).toInt())
+                status = "扫码或用浏览器打开下方地址,先输入密钥"
+            }
         } else {
-            url = "启动失败"
+            status = "启动失败,请重试"
         }
     }
 
@@ -75,8 +79,8 @@ fun SyncOverlay(settings: SettingsStore, vm: SettingsViewModel, onClose: () -> U
                 modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
             Spacer(Modifier.width(40.dp))
         }
-        Spacer(Modifier.height(8.dp))
-        Text("用手机相机/微信扫一扫", color = c.hint, fontSize = 12.sp)
+        Spacer(Modifier.height(6.dp))
+        Text(status, color = c.hint, fontSize = 12.sp, textAlign = TextAlign.Center)
         qr?.let {
             Image(
                 bitmap = it.asImageBitmap(), contentDescription = "二维码",
