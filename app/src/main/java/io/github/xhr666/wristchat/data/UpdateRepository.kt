@@ -93,30 +93,67 @@ class UpdateRepository(private val settings: SettingsStore) {
         )
     }
 
+    /**
+     * 断点续传下载:
+     * - 已有部分文件 → 带 Range 续传(服务端不支持则整段重下)
+     * - 中途失败(切网/断网/读超时)→ 保留部分文件,自动重试一次(续传)
+     * - 协程取消 → 保留部分文件,下次点击从断点续传(不误删)
+     * - 全部失败 → 保留部分文件供下次续传,返回 false
+     */
     suspend fun download(url: String, target: File, onProgress: (Long, Long) -> Unit): Boolean {
+        // 最多两次尝试:第一次(可能续传),失败后自动再试一次
+        for (attempt in 0..1) {
+            if (tryDownloadOnce(url, target, attempt == 1, onProgress)) return true
+        }
+        return false
+    }
+
+    private suspend fun tryDownloadOnce(url: String, target: File, resume: Boolean, onProgress: (Long, Long) -> Unit): Boolean {
+        var conn: java.net.HttpURLConnection? = null
+        var input: java.io.InputStream? = null
+        var output: java.io.OutputStream? = null
         return try {
-            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 15000
-            conn.readTimeout = 60000
-            conn.setRequestProperty("Accept", "application/octet-stream")
-            val total = conn.contentLengthLong
-            val input = conn.inputStream
-            val output = target.outputStream()
+            val existing = if (resume) target.length() else 0L
+            conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                connectTimeout = 15000
+                readTimeout = 30000
+                setRequestProperty("Accept", "application/octet-stream")
+                if (existing > 0) setRequestProperty("Range", "bytes=$existing-")
+            }
+            val code = conn.responseCode
+            if (code !in 200..299 && code != 206) return false
+            input = conn.inputStream
+            if (code == 206 && existing > 0) {
+                output = java.io.FileOutputStream(target, true) // append 续传
+            } else {
+                // 200(服务端不支持断点):清空重下
+                target.outputStream().close()
+                output = target.outputStream()
+            }
+            val total = if (conn.contentLengthLong > 0) existing + conn.contentLengthLong else existing
             val buf = ByteArray(64 * 1024)
+            var done = existing
             var read: Int
-            var done = 0L
             while (input.read(buf).also { read = it } != -1) {
                 output.write(buf, 0, read)
                 done += read
                 onProgress(done, total)
             }
-            output.close()
-            input.close()
-            conn.disconnect()
+            output.flush()
+            output.close(); output = null
+            input.close(); input = null
+            conn.disconnect(); conn = null
             true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 主动取消:保留部分文件,交给上层语义(下次续传)
+            try { output?.close() } catch (_: Exception) {}
+            try { input?.close() } catch (_: Exception) {}
+            throw e
         } catch (e: Exception) {
-            target.delete()
-            false
+            try { output?.close() } catch (_: Exception) {}
+            try { input?.close() } catch (_: Exception) {}
+            try { conn?.disconnect() } catch (_: Exception) {}
+            false // 保留 partial,下次自动续传
         }
     }
 

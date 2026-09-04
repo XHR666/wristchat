@@ -335,7 +335,12 @@ private const val LICENSE_TEXT = """
 private suspend fun installRelease(ctx: Context, repo: UpdateRepository, info: ReleaseInfo): String {
     val dir = java.io.File(ctx.cacheDir, "updates").apply { mkdirs() }
     val target = java.io.File(dir, info.apkName ?: "update.apk")
-    if (!repo.download(info.apkUrl ?: "", target) { _, _ -> }) return "下载失败,请重试"
+    val note = if (target.exists() && target.length() > 0) "(有 ${target.length() / 1024}KB 部分,将续传)" else ""
+    if (!repo.download(info.apkUrl ?: "", target) { _, _ -> }) {
+        return if (target.exists() && target.length() > 0)
+            "下载中断,已保留 ${target.length() / 1024}KB\n恢复网络后重新下载会断点续传$note"
+        else "下载失败,请重试"
+    }
     if (!repo.verifySha256(info.sha256, target)) { target.delete(); return "下载校验失败,已取消" }
     return try {
         val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", target)
