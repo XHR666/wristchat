@@ -1,6 +1,7 @@
 package io.github.xhr666.wristchat.data
 
 import org.json.JSONArray
+import kotlinx.coroutines.ensureActive
 import org.json.JSONObject
 import java.io.File
 
@@ -134,7 +135,10 @@ class UpdateRepository(private val settings: SettingsStore) {
             val buf = ByteArray(64 * 1024)
             var done = existing
             var read: Int
-            while (input.read(buf).also { read = it } != -1) {
+            while (true) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive() // 支持取消
+                read = input.read(buf)
+                if (read == -1) break
                 output.write(buf, 0, read)
                 done += read
                 onProgress(done, total)

@@ -65,8 +65,9 @@ fun WDialogHost(d: DialogController) {
                 confirmText = s.ok, confirmEnabled = remain <= 0,
                 onConfirm = { d.close(); s.onOk() },
                 dismissText = s.cancel.takeIf { it.isNotEmpty() }) {
-                Text((if (remain > 0) "$\n确定 ${remain}s 后可用" else "") + s.message,
-                    color = c.text, fontSize = 13.sp, lineHeight = 18.sp)
+                Text((if (remain > 0) "确定 ${remain}s 后可用\n\n" else "") + s.message,
+                    color = c.text, fontSize = 13.sp, lineHeight = 18.sp,
+                    modifier = Modifier.verticalScroll(rememberScrollState()))
             }
         }
         is WSpec.Choice -> CompactDialog(title = s.title, onDismiss = { d.close() }, dismissText = "取消") {

@@ -349,7 +349,7 @@ private fun LazyListScope.securityRows(s: SettingsStore, d: DialogController) {
 
 private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
     item { WCard("版本", s.versionName) }
-    item { WCard("开源许可", "MIT + 第三方库") { d.text("开源许可", LICENSE_TEXT) } }
+    item { WCard("开源许可", "MIT + 第三方库") { d.text("开源许可", licenseText()) } }
     item {
         val app = LocalContext.current.applicationContext as WristChatApp
         WCard("运行日志(含更新)", "") {
@@ -374,43 +374,3 @@ private const val LICENSE_TEXT = """
 - AndroidX / Jetpack Compose (Apache-2.0)
 - kotlinx-coroutines (Apache-2.0)
 """
-
-private suspend fun installRelease(
-    ctx: Context, repo: UpdateRepository, info: ReleaseInfo,
-    onProgress: (Long, Long) -> Unit = { _, _ -> },
-): String {
-    val dir = java.io.File(ctx.cacheDir, "updates").apply { mkdirs() }
-    val target = java.io.File(dir, info.apkName ?: "update.apk")
-    val note = if (target.exists() && target.length() > 0) "(有 ${target.length() / 1024}KB 部分,将续传)" else ""
-    if (!repo.download(info.apkUrl ?: "", target, onProgress)) {
-        return if (target.exists() && target.length() > 0)
-            "下载中断,已保留 ${target.length() / 1024}KB\n恢复网络后重新下载会断点续传$note"
-        else "下载失败,请重试"
-    }
-    if (!repo.verifySha256(info.sha256, target)) { target.delete(); return "下载校验失败,已取消" }
-    return try {
-        val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", target)
-        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
-        "已调起系统安装器"
-    } catch (e: Exception) { "安装失败:${e.message}" }
-}
-
-private fun themeName(t: String) = when (t) { "light" -> "亮色"; "dark" -> "暗色"; else -> "AMOLED 纯黑" }
-private fun hashPin(pin: String, salt: String): String {
-    val md = java.security.MessageDigest.getInstance("SHA-256")
-    return md.digest("$salt:$pin".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-}
-private fun randomSalt(): String {
-    val b = ByteArray(16); java.security.SecureRandom().nextBytes(b)
-    return b.joinToString("") { "%02x".format(it) }
-}
-private fun queryName(ctx: Context, uri: Uri): String? = runCatching {
-    ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
-        val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-        if (i >= 0 && c.moveToFirst()) c.getString(i) else null
-    }
-}.getOrNull()

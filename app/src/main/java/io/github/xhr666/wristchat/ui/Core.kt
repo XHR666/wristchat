@@ -202,7 +202,8 @@ fun WConfirm(title: String, message: String, okText: String = "确定", cancelTe
         confirmText = okText, confirmEnabled = remain <= 0,
         onConfirm = onOk, dismissText = cancelText) {
         Text(if (remain > 0) "$message\n(确定在 ${remain}s 后可用)" else message,
-            color = c.text, fontSize = 13.sp, lineHeight = 18.sp)
+            color = c.text, fontSize = 13.sp, lineHeight = 18.sp,
+            modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()))
     }
 }
 
