@@ -18,6 +18,7 @@ class WristChatApp : Application() {
         settings = SettingsStore.newInstance(this)
         settings.versionName = BuildConfig.VERSION_NAME
         installCrashLog()
+        io.github.xhr666.wristchat.data.AppLog.init(this)
     }
 
     /** 未捕获异常写入 filesDir/crash.log(设置→关于→查看崩溃日志) */

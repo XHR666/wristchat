@@ -10,6 +10,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -250,28 +253,63 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
     item {
         val ctx = LocalContext.current
         val scope = rememberCoroutineScope()
+        var prog by remember { mutableStateOf<Int?>(null) }
+        var job: kotlinx.coroutines.Job? = null
         WCard("检查更新", "") {
             val repo = UpdateRepository(s)
+            io.github.xhr666.wristchat.data.AppLog.i("upd", "check start v=${s.versionName}")
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val r = repo.check()
-                s.lastUpdateCheck = System.currentTimeMillis()
-                launch(kotlinx.coroutines.Dispatchers.Main) {
-                    when (r) {
-                        is UpdateResult.Found -> d.confirm("发现新版本 ${r.info.tagName}",
-                            "当前:${s.versionName}\n${r.info.body.take(160)}", ok = "下载更新") {
-                            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                val msg = installRelease(ctx, repo, r.info)
-                                launch(kotlinx.coroutines.Dispatchers.Main) { d.text("更新", msg) }
+                try {
+                    val r = repo.check()
+                    s.lastUpdateCheck = System.currentTimeMillis()
+                    io.github.xhr666.wristchat.data.AppLog.i("upd", "check=$r")
+                    launch(kotlinx.coroutines.Dispatchers.Main) {
+                        when (r) {
+                            is UpdateResult.Found -> d.confirm("发现新版本 ${r.info.tagName}",
+                                "当前:${s.versionName}\n${r.info.body.take(160)}", ok = "下载更新") {
+                                io.github.xhr666.wristchat.data.AppLog.i("upd", "user taps download")
+                                prog = -1
+                                job = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                    try {
+                                        val msg = installRelease(ctx, repo, r.info) { done, total ->
+                                            launch(kotlinx.coroutines.Dispatchers.Main) {
+                                                prog = if (total > 0) (done * 100 / total).toInt() else -1
+                                            }
+                                        }
+                                        io.github.xhr666.wristchat.data.AppLog.i("upd", "done: $msg")
+                                        launch(kotlinx.coroutines.Dispatchers.Main) { prog = null; d.text("更新", msg) }
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        io.github.xhr666.wristchat.data.AppLog.i("upd", "cancelled by user")
+                                        launch(kotlinx.coroutines.Dispatchers.Main) { prog = null }
+                                        throw e
+                                    } catch (e: Exception) {
+                                        io.github.xhr666.wristchat.data.AppLog.i("upd", "err ${e}")
+                                        launch(kotlinx.coroutines.Dispatchers.Main) { prog = null; d.text("更新失败", e.message ?: "未知错误") }
+                                    }
+                                }
                             }
+                            is UpdateResult.UpToDate -> d.text("更新", "已是最新(${r.latest})")
+                            is UpdateResult.NoApk -> d.text("更新", "发现 ${r.latest},但无 APK 资产")
+                            is UpdateResult.Error -> d.text("更新失败", r.message)
                         }
-                        is UpdateResult.UpToDate -> d.text("更新", "已是最新(${r.latest})")
-                        is UpdateResult.NoApk -> d.text("更新", "发现 ${r.latest},但无 APK 资产")
-                        is UpdateResult.Error -> d.text("更新失败", r.message)
                     }
+                } catch (e: Exception) {
+                    io.github.xhr666.wristchat.data.AppLog.i("upd", "check err ${e}")
+                    launch(kotlinx.coroutines.Dispatchers.Main) { d.text("更新失败", e.message ?: "未知错误") }
                 }
             }
         }
-    }
+        prog?.let { p ->
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("下载更新", fontSize = 15.sp) },
+                text = { Text(if (p < 0) "连接中…" else "下载中 $p%", fontSize = 13.sp) },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = { job?.cancel() }) { Text("取消") } },
+                containerColor = MaterialTheme.colorScheme.surface,
+            )
+        }
+        }
     item { WCard("手机同步(二维码)", "") { openSync() } }
     item { WCard("自动检查冷却(分钟)", s.updateCooldownMin.toString()) { d.num("冷却(5-60)", s.updateCooldownMin.toFloat(), 5f, 60f) { s.updateCooldownMin = it.toInt() } } }
 }
@@ -312,6 +350,9 @@ private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: 
     item { WCard("开源许可", "MIT + 第三方库") { d.text("开源许可", LICENSE_TEXT) } }
     item {
         val app = LocalContext.current.applicationContext as WristChatApp
+        WCard("运行日志(含更新)", "") {
+            d.text("运行日志", io.github.xhr666.wristchat.data.AppLog.read())
+        }
         WCard("查看崩溃日志", "") { d.text("崩溃日志", app.crashLogText().take(1200)) }
     }
     item {
@@ -332,11 +373,14 @@ private const val LICENSE_TEXT = """
 - kotlinx-coroutines (Apache-2.0)
 """
 
-private suspend fun installRelease(ctx: Context, repo: UpdateRepository, info: ReleaseInfo): String {
+private suspend fun installRelease(
+    ctx: Context, repo: UpdateRepository, info: ReleaseInfo,
+    onProgress: (Long, Long) -> Unit = { _, _ -> },
+): String {
     val dir = java.io.File(ctx.cacheDir, "updates").apply { mkdirs() }
     val target = java.io.File(dir, info.apkName ?: "update.apk")
     val note = if (target.exists() && target.length() > 0) "(有 ${target.length() / 1024}KB 部分,将续传)" else ""
-    if (!repo.download(info.apkUrl ?: "", target) { _, _ -> }) {
+    if (!repo.download(info.apkUrl ?: "", target, onProgress)) {
         return if (target.exists() && target.length() > 0)
             "下载中断,已保留 ${target.length() / 1024}KB\n恢复网络后重新下载会断点续传$note"
         else "下载失败,请重试"
