@@ -35,7 +35,7 @@ fun BalanceScreen(settings: SettingsStore) {
     ScreenScaffold(title = "余额", actions = { SmallAction("⟳") { vm.refresh() } }) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().scrollArc(listState),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 8.dp, bottom = 24.dp),
         ) {
             item {

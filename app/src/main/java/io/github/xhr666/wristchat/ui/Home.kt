@@ -49,6 +49,7 @@ private fun needLock(s: SettingsStore): Boolean {
 }
 
 val LocalCurrentPage = staticCompositionLocalOf { 0 }
+val LocalPageBack = staticCompositionLocalOf<() -> Unit> { {} }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -60,7 +61,12 @@ fun HomePager(settings: SettingsStore) {
     val chatVm: io.github.xhr666.wristchat.ui.chat.ChatViewModel =
         androidx.lifecycle.viewmodel.compose.viewModel(factory = io.github.xhr666.wristchat.ui.chat.ChatViewModelFactory(app))
 
-    CompositionLocalProvider(LocalCurrentPage provides currentPage) {
+    CompositionLocalProvider(
+        LocalCurrentPage provides currentPage,
+        LocalPageBack provides {
+            if (currentPage > 0) scope.launch { pagerState.animateScrollToPage(currentPage - 1) }
+        },
+    ) {
         HorizontalPager(state = pagerState, userScrollEnabled = !PagerLock.locked, modifier = Modifier.fillMaxSize()) { page ->
             when (page) {
                 0 -> SessionsScreen(settings, chatVm, onOpenChat = { scope.launch { pagerState.animateScrollToPage(1) } })

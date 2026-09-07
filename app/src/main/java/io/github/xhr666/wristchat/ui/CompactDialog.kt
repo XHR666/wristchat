@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,21 +36,33 @@ fun CompactDialog(
     content: @Composable () -> Unit,
 ) {
     val c = LocalWrist.current
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // 自绘覆盖层:无平台窗口动画,内容真正居中;整体限高,内容超高滚动,按钮固定可见
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xAA000000)),
+        contentAlignment = Alignment.Center,
+    ) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(22.dp),
             color = c.surface,
-            modifier = Modifier.widthIn(max = 220.dp, min = 180.dp),
+            shadowElevation = 8.dp,
+            modifier = Modifier.widthIn(min = 176.dp, max = 224.dp).heightIn(max = 340.dp),
         ) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                 Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
-                Box(Modifier.heightIn(max = 300.dp)) {
-                    content()
+                Spacer(Modifier.height(6.dp))
+                // 内容区:占剩余高度、超高滚动
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .heightIn(max = 240.dp),
+                ) {
+                    Column(Modifier.verticalScroll(rememberScrollState())) { content() }
                 }
                 if (confirmText != null || dismissText != null) {
-                    Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                         if (dismissText != null) {
                             TextButton(onClick = onDismiss) { Text(dismissText, color = c.hint, fontSize = 13.sp) }
@@ -66,7 +79,6 @@ fun CompactDialog(
     }
 }
 
-/** 弹窗内可滚动列表行 */
 @Composable
 fun CompactRows(items: List<String>, checked: Int? = null, onPick: (Int) -> Unit) {
     val c = LocalWrist.current

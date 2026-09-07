@@ -93,7 +93,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             }
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f).scrollArc(listState),
+                modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 10.dp),
             ) {
                 itemsIndexed(messages) { i, m -> MessageItem(m) }

@@ -85,11 +85,12 @@ fun ScreenScaffold(
             var swipeAcc by remember { mutableStateOf(0f) }
             var rowMod = Modifier.fillMaxWidth().height(40.dp).padding(start = inset + 6.dp, end = inset + 6.dp)
             if (onHeaderSwipeBack != null) {
-                rowMod = rowMod.pointerInput(onHeaderSwipeBack) {
+                val back = onHeaderSwipeBack ?: LocalPageBack.current
+                rowMod = rowMod.pointerInput(back) {
                     detectHorizontalDragGestures(
                         onDragStart = { swipeAcc = 0f },
                         onHorizontalDrag = { _, amount -> swipeAcc += amount },
-                        onDragEnd = { if (swipeAcc < -80f) onHeaderSwipeBack(); swipeAcc = 0f },
+                        onDragEnd = { if (swipeAcc > 80f) back(); swipeAcc = 0f }, // 右滑=返回
                         onDragCancel = { swipeAcc = 0f },
                     )
                 }

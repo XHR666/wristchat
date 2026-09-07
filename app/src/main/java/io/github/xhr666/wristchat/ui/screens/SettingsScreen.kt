@@ -66,7 +66,7 @@ fun SettingsMenuScreen(settings: SettingsStore) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().background(Color(0xFF3D2E14)).padding(6.dp))
             LazyColumn(state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp).scrollArc(listState),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)) {
                 items(CATS) { cat -> WCard(cat.title, cat.desc) { openCat = cat.key } }
             }
@@ -93,7 +93,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
     ScreenScaffold(title = CAT_TITLE[cat] ?: "设置",
         actions = { SmallAction("‹") { onBack() } },
         onHeaderSwipeBack = onBack) {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp).scrollArc(listState),
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 14.dp)) {
                 when (cat) {
                     "service" -> serviceRows(settings, dialogs)
