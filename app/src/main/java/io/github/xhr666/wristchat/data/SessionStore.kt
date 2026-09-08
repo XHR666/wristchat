@@ -10,6 +10,7 @@ import java.util.UUID
 data class ChatMessage(
     val role: String,          // user / assistant / system
     val content: String,
+    val img: String? = null,   // 图片附件文件名(filesDir/attachments/),仅 user 消息
     val reasoning: String = "",
     val ts: Long = System.currentTimeMillis(),
     val usage: TokenUsage? = null,
@@ -74,6 +75,7 @@ class SessionStore(private val context: Context) {
                 ChatMessage(
                     role = m.optString("role"),
                     content = m.optString("content"),
+                    img = m.optString("img").takeIf { it.isNotBlank() },
                     reasoning = m.optString("reasoning"),
                     ts = m.optLong("ts"),
                     usage = m.optJSONObject("usage")?.let { u ->
@@ -103,6 +105,7 @@ class SessionStore(private val context: Context) {
                 JSONObject().apply {
                     put("role", m.role)
                     put("content", m.content)
+                    m.img?.let { put("img", it) }
                     put("reasoning", m.reasoning)
                     put("ts", m.ts)
                     m.usage?.let { u ->
@@ -139,10 +142,12 @@ class SessionStore(private val context: Context) {
 
     fun delete(id: String) {
         File(dir, "$id.json").delete()
+        Attachments.deleteForSession(context, id)
     }
 
     fun clear() {
         dir.listFiles()?.forEach { it.delete() }
+        Attachments.clearAll(context)
     }
 
     fun totalSizeBytes(): Long =

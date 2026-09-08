@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -34,6 +35,7 @@ import io.github.xhr666.wristchat.ui.*
 import io.github.xhr666.wristchat.ui.chat.ChatViewModel
 import io.github.xhr666.wristchat.ui.chat.KatexWebView
 import io.noties.markwon.Markwon
+import kotlinx.coroutines.launch
 
 @Composable
 fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
@@ -178,11 +180,36 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage) {
                 .background(if (isUser) c.bubbleUser else c.bubbleAi)
                 .padding(10.dp),
         ) {
-            MsgContent(m.content, isUser)
+            Column {
+                m.img?.let { MsgImage(it) }
+                if (m.content.isNotBlank() || m.img == null) MsgContent(m.content, isUser)
+            }
         }
         if (!isUser && (m.cost > 0 || (m.usage?.totalTokens ?: 0) > 0)) {
             Text("tokens:${m.usage?.totalTokens ?: 0} · ¥%.4f".format(m.cost), color = c.hint, fontSize = 9.sp)
         }
+    }
+}
+
+/** 消息内图片缩略图(IO 解码,不卡主线程) */
+@Composable
+private fun MsgImage(name: String) {
+    val ctx = LocalContext.current
+    val bmp by produceState<android.graphics.Bitmap?>(null, name) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            io.github.xhr666.wristchat.data.Attachments.loadThumb(ctx, name)
+        }
+    }
+    bmp?.let { b ->
+        Box(Modifier.fillMaxWidth().heightIn(max = 150.dp), contentAlignment = Alignment.Center) {
+            androidx.compose.foundation.Image(
+                bitmap = b.asImageBitmap(),
+                contentDescription = "图片",
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
     }
 }
 
@@ -220,6 +247,11 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val c = LocalWrist.current
     var text by remember { mutableStateOf(vm.draft.value ?: "") }
+    var attachName by remember { mutableStateOf<String?>(null) }
+    var attachThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var visionAsk by remember { mutableStateOf(false) }
+    var hint by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
     // 组合期不写全局状态:SideEffect 提交后再锁定,退出时 DisposableEffect 解锁
@@ -232,6 +264,31 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         keyboard?.show()
     }
 
+    // 图片选择:系统相册/文件选择器;无可用选择器时给提示
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            hint = null
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val name = io.github.xhr666.wristchat.data.Attachments
+                    .importFromUri(ctx, uri, vm.currentSessionId() ?: "s")
+                val thumb = name?.let { io.github.xhr666.wristchat.data.Attachments.loadThumb(ctx, it) }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    if (name == null) hint = "图片读取失败或不支持的格式"
+                    else { attachName = name; attachThumb = thumb; text = "" }
+                }
+            }
+        }
+    }
+    fun launchPicker() {
+        if (!vm.providerIsDeepSeek()) { hint = "图片仅 DeepSeek 支持(需 deepseek-v4-flash-vision-exp)"; return }
+        if (!vm.modelSupportsVision()) { visionAsk = true; return }
+        hint = null
+        try { picker.launch("image/*") }
+        catch (e: Exception) { hint = "没有可用的图片选择器" }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -241,21 +298,47 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SmallAction("‹") { vm.setDraft(text); keyboard?.hide(); onClose() }
-            Text("输入消息", color = c.text, fontSize = 14.sp, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(if (attachName != null) "发送图片" else "输入消息", color = c.text, fontSize = 14.sp,
+                modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            SmallAction("🖼") { launchPicker() }
             SmallAction("➤") {
                 vm.setDraft(text)
-                vm.send(text)
+                vm.send(text, attachName)
                 keyboard?.hide()
                 onClose()
             }
         }
+        attachThumb?.let { bmp ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                androidx.compose.foundation.Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+                )
+                Text("已选图片(JPEG 压缩后上传)", color = c.hint, fontSize = 11.sp,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                SmallAction("✕") { attachName = null; attachThumb = null }
+            }
+        }
+        hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp)) }
         TextField(
             value = text, onValueChange = { if (it.length <= 8000) text = it },
             modifier = Modifier
                 .fillMaxSize()
                 .focusRequester(focusRequester),
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = c.text),
-            placeholder = { Text("在此输入…", color = c.hint) },
+            placeholder = { Text(if (attachName != null) "补充说明(可留空)…" else "在此输入…", color = c.hint) },
         )
+    }
+
+    if (visionAsk) {
+        WConfirm("需要视觉模型", "图片需要 deepseek-v4-flash-vision-exp。\n切换当前对话模型?",
+            okText = "切换", onOk = {
+                vm.switchToVisionModel()
+                visionAsk = false
+                try { picker.launch("image/*") } catch (e: Exception) { hint = "没有可用的图片选择器" }
+            }, onCancel = { visionAsk = false })
     }
 }

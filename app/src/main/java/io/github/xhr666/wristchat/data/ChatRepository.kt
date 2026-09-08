@@ -22,7 +22,13 @@ data class MemoryOp(val action: String, val id: String?, val content: String?)
 class ChatRepository(
     private val settings: SettingsStore,
     private val memory: MemoryStore,
+    private val app: android.app.Application,
 ) {
+
+    companion object {
+        const val VISION_MODEL = "deepseek-v4-flash-vision-exp"
+        fun supportsVision(model: String): Boolean = model.contains("vision", ignoreCase = true)
+    }
 
     private val MEMORY_TOOL_SCHEMA = JSONObject().apply {
         put("type", "function")
@@ -54,10 +60,11 @@ class ChatRepository(
         })
     }
 
-    /** 单次对话请求;带 history(不含新提问) */
+    /** 单次对话请求;带 history(不含新提问)。imageFile:本轮提问附带的图片附件文件名 */
     suspend fun chat(
         history: List<ChatMessage>,
         newUserText: String,
+        imageFile: String? = null,
         enableMemory: Boolean,
     ): ChatResult {
         val provider = Providers.resolve(settings)
@@ -65,6 +72,10 @@ class ChatRepository(
         if (apiKey.isBlank()) return ChatResult.Error("请先在设置中填写 API Key")
         val url = provider.defaultBaseUrl + provider.defaultPath
         val model = settings.model.ifBlank { provider.models.firstOrNull() ?: "deepseek-v4-flash" }
+        val vision = supportsVision(model)
+        if (imageFile != null && !vision) {
+            return ChatResult.Error("当前模型($model)不支持图片,请在设置里切换到 $VISION_MODEL")
+        }
 
         // 组装系统提示:自定义 Prompt → Skills → 记忆
         val sysParts = mutableListOf<String>()
@@ -79,13 +90,17 @@ class ChatRepository(
         }
         // 历史(不含 reasoning_content:官方规则——无 tools 时忽略;带 tools 时回传)
         history.forEach { m ->
-            val o = JSONObject().put("role", m.role).put("content", m.content)
+            val o = JSONObject().put("role", m.role).put("content", contentOf(m, vision))
             if (enableMemory && m.role == "assistant" && m.reasoning.isNotBlank()) {
                 o.put("reasoning_content", m.reasoning)
             }
             messages.put(o)
         }
-        messages.put(JSONObject().put("role", "user").put("content", newUserText))
+        // 本轮提问:带图时 content 为 text+image 块数组(官方 vision 格式)
+        val ask = if (imageFile != null && vision) {
+            contentOf(ChatMessage(role = "user", content = newUserText, img = imageFile), vision)
+        } else newUserText
+        messages.put(JSONObject().put("role", "user").put("content", ask))
 
         val body = JSONObject().apply {
             put("model", model)
@@ -198,6 +213,22 @@ class ChatRepository(
             cost = cost,
             model = model,
         )
+    }
+
+    /**
+     * 消息内容序列化:user 消息带图片且模型支持 vision 时,content 为
+     * [{"type":"text","text":..},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,.."}}]
+     * 否则保持纯文本字符串(官方格式,图片仅在 user 消息,每图 ≤384 tokens)。
+     */
+    private fun contentOf(m: ChatMessage, vision: Boolean): Any {
+        val img = m.img
+        if (!vision || img == null || m.role != "user") return m.content
+        val b64 = Attachments.readBase64(app, img) ?: return m.content
+        return JSONArray().apply {
+            if (m.content.isNotBlank()) put(JSONObject().put("type", "text").put("text", m.content))
+            put(JSONObject().put("type", "image_url").put("image_url",
+                JSONObject().put("url", "data:image/jpeg;base64,$b64")))
+        }
     }
 
     private fun executeMemoryTool(args: String, ops: MutableList<MemoryOp>): String {

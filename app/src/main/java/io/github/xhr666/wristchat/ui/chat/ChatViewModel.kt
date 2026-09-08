@@ -34,7 +34,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val sessionStore = SessionStore(app)
     private val memoryStore = MemoryStore(app)
     private val skillStore = SkillStore(app)
-    private val repo = ChatRepository(settings, memoryStore)
+    private val repo = ChatRepository(settings, memoryStore, app)
 
     private val _session = MutableLiveData<Session>()
     val session: LiveData<Session> = _session
@@ -108,6 +108,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setDraft(text: String) { _draft.value = text }
 
+    /** 图片上传辅助 */
+    fun currentSessionId(): String? = _session.value?.id
+    fun providerIsDeepSeek(): Boolean = settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
+    fun modelSupportsVision(): Boolean =
+        io.github.xhr666.wristchat.data.ChatRepository.supportsVision(settings.model)
+    fun switchToVisionModel() {
+        settings.model = io.github.xhr666.wristchat.data.ChatRepository.VISION_MODEL
+    }
+
     fun clearDraft() { _draft.value = "" }
 
     fun toggleQuickPanel() {
@@ -137,6 +146,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             s.totalTokens = 0; s.totalCacheHit = 0; s.totalCacheMiss = 0
             s.totalCompletionTokens = 0; s.totalCost = 0.0; s.totalRequests = 0
             s.compressedCount = 0
+            io.github.xhr666.wristchat.data.Attachments.deleteForSession(getApplication(), s.id)
             sessionStore.save(s)
             _session.value = s
             refreshSessions()
@@ -208,24 +218,30 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _session.value = s
     }
 
-    fun send(text: String) {
+    fun send(text: String, imageFile: String? = null) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty()) return
+        if (trimmed.isEmpty() && imageFile == null) return
         if (_sending.value == true) return
-        if (handleSlash(trimmed)) { clearDraft(); return }
+        if (trimmed.isNotEmpty() && handleSlash(trimmed)) { clearDraft(); return }
 
         val s = _session.value ?: return
-        // 追加用户消息
-        s.messages.add(ChatMessage(role = "user", content = trimmed, ts = System.currentTimeMillis()))
+        val ts = System.currentTimeMillis()
+        val userMsg = ChatMessage(role = "user", content = trimmed, img = imageFile, ts = ts)
+        // 先落库(即使请求失败,用户消息也保留)
+        s.messages.add(userMsg)
         sessionStore.save(s)
         _session.value = s
-        clearDraft()
+        if (trimmed.isEmpty()) _draft.value = ""
+        else clearDraft()
         _sending.value = true
 
         viewModelScope.launch {
             // 上下文压缩检查
             maybeCompress(s)
-            val result = repo.chat(s.messages.filter { it.role != "system" }, trimmed, enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK)
+            // 历史不含刚追加的这条用户消息(仓库会把它作为本轮提问带上去,避免重复)
+            val history = s.messages.filter { it.role != "system" && it !== userMsg }
+            val result = repo.chat(history, trimmed, imageFile = imageFile,
+                enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK)
             when (result) {
                 is ChatResult.Success -> {
                     val ai = ChatMessage(
