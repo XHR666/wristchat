@@ -55,8 +55,11 @@ object PagerLock {
 }
 
 object RotaryBus {
+    // 无收集器(如锁定/翻页中)时事件直接丢弃,避免解锁后积压事件一次性注入导致列表跳飞
     val flow = MutableSharedFlow<Int>(extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    fun emit(delta: Int) { flow.tryEmit(delta.coerceIn(-32, 32)) }
+    fun emit(delta: Int) {
+        if (flow.subscriptionCount.value > 0) flow.tryEmit(delta.coerceIn(-32, 32))
+    }
 }
 
 @Composable
@@ -85,12 +88,13 @@ fun ScreenScaffold(
             var swipeAcc by remember { mutableStateOf(0f) }
             var rowMod = Modifier.fillMaxWidth().height(40.dp).padding(start = inset + 6.dp, end = inset + 6.dp)
             if (onHeaderSwipeBack != null) {
-                val back = onHeaderSwipeBack ?: LocalPageBack.current
-                rowMod = rowMod.pointerInput(back) {
+                // key 固定 Unit + rememberUpdatedState:onBack 换新实例不再重启手势检测
+                val currentBack by rememberUpdatedState(onHeaderSwipeBack)
+                rowMod = rowMod.pointerInput(Unit) {
                     detectHorizontalDragGestures(
                         onDragStart = { swipeAcc = 0f },
                         onHorizontalDrag = { _, amount -> swipeAcc += amount },
-                        onDragEnd = { if (swipeAcc > 80f) back(); swipeAcc = 0f }, // 右滑=返回
+                        onDragEnd = { if (swipeAcc > 80f) currentBack(); swipeAcc = 0f }, // 右滑=返回
                         onDragCancel = { swipeAcc = 0f },
                     )
                 }
@@ -161,6 +165,7 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
 fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     val c = LocalWrist.current
     var on by remember { mutableStateOf(checked) }
+    LaunchedEffect(checked) { on = checked }   // 外部状态变化(如同步)时刷新开关
     Row(
         modifier
             .fillMaxWidth()
@@ -209,7 +214,7 @@ fun WToast(msg: String?) {
 @Composable
 fun WConfirm(title: String, message: String, okText: String = "确定", cancelText: String = "取消",
              countdown: Int = 0, onOk: () -> Unit, onCancel: () -> Unit = {}) {
-    var remain by remember { mutableStateOf(countdown) }
+    var remain by remember(countdown) { mutableStateOf(countdown) }
     LaunchedEffect(countdown) { if (countdown > 0) while (remain > 0) { kotlinx.coroutines.delay(1000); remain-- } }
     val c = LocalWrist.current
     CompactDialog(title = title, onDismiss = onCancel,
@@ -231,7 +236,7 @@ fun WChoice(title: String, items: List<String>, checked: Int, onPick: (Int) -> U
 @Composable
 fun WInput(title: String, initial: String, password: Boolean = false, multiline: Boolean = false,
            okText: String = "保存", onOk: (String) -> Unit, onCancel: () -> Unit = {}) {
-    var v by remember { mutableStateOf(initial) }
+    var v by remember(initial, title) { mutableStateOf(initial) }
     CompactDialog(title = title, onDismiss = onCancel,
         confirmText = okText, onConfirm = { onOk(v) }, dismissText = "取消") {
         androidx.compose.material3.OutlinedTextField(

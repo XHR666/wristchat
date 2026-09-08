@@ -40,8 +40,10 @@ object Installer {
             }
             val sessionId = installer.createSession(params)
             val session = installer.openSession(sessionId)
+            var committed = false
             try {
-                val out = session.openWrite("pkg", 0, -1)
+                // 传实际大小而非 -1:个别 OEM PackageInstaller 不支持未知长度(H18)
+                val out = session.openWrite("pkg", 0, apk.length())
                 apk.inputStream().use { input ->
                     val buf = ByteArray(64 * 1024)
                     var n: Int
@@ -50,25 +52,28 @@ object Installer {
                     session.fsync(out)   // 必须在 close 之前 fsync
                     out.close()
                 }
+                val pi = PendingIntent.getBroadcast(
+                    ctx, sessionId,
+                    Intent(ACTION_RESULT).setPackage(ctx.packageName),
+                    if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                // API 34 stub 未公开 commitSession,设备(API30)存在 → 反射调用
+                try {
+                    val m = PackageInstaller::class.java.getMethod(
+                        "commitSession", Int::class.javaPrimitiveType, android.content.IntentSender::class.java)
+                    m.invoke(installer, sessionId, pi.intentSender)
+                } catch (nsme: NoSuchMethodException) {
+                    val m2 = PackageInstaller::class.java.getMethod(
+                        "commitSession", Int::class.javaPrimitiveType, PendingIntent::class.java)
+                    m2.invoke(installer, sessionId, pi)
+                }
+                committed = true
+                InstallerResult.Submitted(sessionId)
             } finally {
                 try { session.close() } catch (_: Exception) {}
+                // 未提交则放弃会话,避免残留占用系统 session(H17)
+                if (!committed) { try { session.abandon() } catch (_: Exception) {} }
             }
-            val pi = PendingIntent.getBroadcast(
-                ctx, sessionId,
-                Intent(ACTION_RESULT).setPackage(ctx.packageName),
-                if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            // API 34 stub 未公开 commitSession,设备(API30)存在 → 反射调用
-            try {
-                val m = PackageInstaller::class.java.getMethod(
-                    "commitSession", Int::class.javaPrimitiveType, android.content.IntentSender::class.java)
-                m.invoke(installer, sessionId, pi.intentSender)
-            } catch (nsme: NoSuchMethodException) {
-                val m2 = PackageInstaller::class.java.getMethod(
-                    "commitSession", Int::class.javaPrimitiveType, PendingIntent::class.java)
-                m2.invoke(installer, sessionId, pi)
-            }
-            InstallerResult.Submitted(sessionId)
         } catch (e: Exception) {
             InstallerResult.Fail(e.message ?: "安装失败")
         }

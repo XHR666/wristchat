@@ -30,7 +30,11 @@ fun BalanceScreen(settings: SettingsStore) {
     val listState = rememberLazyListState()
     val c = LocalWrist.current
 
-    LaunchedEffect(Unit) { vm.refresh() }
+    // 每次真正进入余额页都刷新(M15:以页码为 key,而非 Boolean)
+    val page = LocalCurrentPage.current
+    LaunchedEffect(page) {
+        if (page == 2) vm.refresh()
+    }
 
     ScreenScaffold(title = "余额", actions = { SmallAction("⟳") { vm.refresh() } }) {
         LazyColumn(

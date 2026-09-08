@@ -39,12 +39,18 @@ fun CompactDialog(
     val cfg = androidx.compose.ui.platform.LocalConfiguration.current
     val maxH = (cfg.screenHeightDp - 12).dp  // 弹窗不超屏,按钮永在屏内
     // 自绘覆盖层:无平台窗口动画,内容真正居中;整体限高,内容超高滚动,按钮固定可见
+    // 遮罩(垫底)消费触摸并支持点外部关闭;Surface 在上层,内部空白点击不会误关弹窗
+    val maskClick = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0xAA000000)),
+        Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0xAA000000))
+                .clickable(interactionSource = maskClick, indication = null) { onDismiss() },
+        )
         Surface(
             shape = RoundedCornerShape(22.dp),
             color = c.surface,
@@ -55,12 +61,11 @@ fun CompactDialog(
                 Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-                // 内容区:占剩余高度、超高滚动
+                // 内容区:固定最大高(给标题/按钮留位),超高滚动;无 weight,测量稳定
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .heightIn(min = 20.dp),
+                        .heightIn(max = (maxH - 92.dp)),
                 ) {
                     Column(
                         Modifier

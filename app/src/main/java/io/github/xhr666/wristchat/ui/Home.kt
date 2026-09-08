@@ -22,6 +22,9 @@ object LockGate {
     var unlocked: Boolean = false
 }
 
+/** 进程级标记:本次进程启动已扣过一次免密次数(主题切换等 recreate 不再重复扣) */
+private var graceApplied = false
+
 @Composable
 fun WristAppRoot(settings: SettingsStore) {
     val palette = when (settings.theme) { "light" -> Light; "dark" -> Dark; else -> Amoled }
@@ -44,7 +47,11 @@ fun WristAppRoot(settings: SettingsStore) {
 private fun needLock(s: SettingsStore): Boolean {
     if (!s.passwordEnabled) return false
     if (LockGate.unlocked) return false
-    if (s.graceLeft > 0) { s.graceLeft -= 1; return false }
+    if (s.graceLeft > 0) {
+        // 免密次数只在真正的进程启动时扣一次;recreate(主题/缩放切换)不重复扣
+        if (!graceApplied) { s.graceLeft -= 1; graceApplied = true }
+        return false
+    }
     return true
 }
 
@@ -55,7 +62,8 @@ val LocalPageBack = staticCompositionLocalOf<() -> Unit> { {} }
 @Composable
 fun HomePager(settings: SettingsStore) {
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
-    val currentPage by remember { derivedStateOf { pagerState.currentPage } }
+    // settledPage:只在页面真正落定时更新,滑动过程中不触发整树重组
+    val currentPage by remember { derivedStateOf { pagerState.settledPage } }
     val scope = rememberCoroutineScope()
     val app = LocalContext.current.applicationContext as WristChatApp
     val chatVm: io.github.xhr666.wristchat.ui.chat.ChatViewModel =

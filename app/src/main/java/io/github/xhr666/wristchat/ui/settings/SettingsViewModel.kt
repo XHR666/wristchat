@@ -45,13 +45,13 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshSizes() {
         val sessions = sessionStore.list()
-        _sessionWarn.value = sessions.size >= MAX_SESSIONS || sessions.any { it.messages.size >= MAX_MESSAGES }
+        _sessionWarn.postValue(sessions.size >= MAX_SESSIONS || sessions.any { it.messages.size >= MAX_MESSAGES })
         val sesBytes = sessionStore.totalSizeBytes()
         val memBytes = memoryStore.sizeBytes()
         val skillBytes = skillStore.totalSizeBytes()
         val webCache = webViewCacheSize()
-        _sessionsSize.value = human(sesBytes)
-        _cacheInfo.value = "WebView 缓存:${human(webCache)} · 会话:${human(sesBytes)} · 记忆:${human(memBytes)} · 技能:${human(skillBytes)}"
+        _sessionsSize.postValue(human(sesBytes))
+        _cacheInfo.postValue("WebView 缓存:${human(webCache)} · 会话:${human(sesBytes)} · 记忆:${human(memBytes)} · 技能:${human(skillBytes)}")
     }
 
     private fun webViewCacheSize(): Long {

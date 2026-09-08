@@ -28,7 +28,10 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
     val listState = rememberLazyListState()
     val c = LocalWrist.current
 
-    LaunchedEffect(Unit) { vm.refreshSessions() }
+    // 每次进入负一屏都刷新(避免冷启动时序问题;M16:以页码为 key)
+    LaunchedEffect(currentPage) {
+        if (currentPage == 0) { kotlinx.coroutines.delay(400); vm.refreshSessions() }
+    }
     var deleteTarget by remember { mutableStateOf<io.github.xhr666.wristchat.data.Session?>(null) }
 
     ScreenScaffold(

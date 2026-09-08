@@ -24,17 +24,21 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
     var input by remember { mutableStateOf("") }
     var hint by remember { mutableStateOf("请输入密码") }
     var lockedUntil by remember { mutableStateOf(0L) }
+    // 缓存重置通道标记,避免锁定倒计时期间每秒读 SP(M12)
+    var pendingReset by remember { mutableStateOf(settings.pendingReset0000) }
 
     fun check(pin: String) {
         val s = settings
         if (s.pendingReset0000 && pin == "0000") {
             s.passwordEnabled = false; s.passwordHash = ""; s.passwordSalt = ""
             s.pendingReset0000 = false; s.failCount = 0; s.lastFiveInputs = ""
+            pendingReset = false
             LockGate.unlocked = true
             onUnlocked(); return
         }
         if (s.passwordHash.isNotEmpty() && hash(pin, s.passwordSalt) == s.passwordHash) {
             s.failCount = 0; s.lastFiveInputs = ""; s.pendingReset0000 = false
+            pendingReset = false
             LockGate.unlocked = true
             onUnlocked(); return
         }
@@ -44,7 +48,7 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
         val last = (s.lastFiveInputs.split(",").filter { it.isNotEmpty() } + h).takeLast(5)
         s.lastFiveInputs = last.joinToString(",")
         val h0 = hashPinPlain("0000")
-        if (last.size >= 5 && last.all { it == h0 }) s.pendingReset0000 = true
+        if (last.size >= 5 && last.all { it == h0 }) { s.pendingReset0000 = true; pendingReset = true }
         if (s.failCount >= 5) {
             lockedUntil = System.currentTimeMillis() + 30_000
             s.failCount = 0
@@ -54,12 +58,13 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
 
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(lockedUntil) {
-        while (lockedUntil > System.currentTimeMillis()) {
-            kotlinx.coroutines.delay(1000)
+        if (lockedUntil > 0L) {
+            while (System.currentTimeMillis() < lockedUntil) {
+                now = System.currentTimeMillis()
+                kotlinx.coroutines.delay(250)
+            }
             now = System.currentTimeMillis()
-        }
-        if (lockedUntil != 0L && lockedUntil <= now) {
-            hint = if (settings.pendingReset0000) "提示:重置通道就绪" else "请输入密码"
+            hint = if (pendingReset) "提示:重置通道就绪" else "请输入密码"
         }
     }
     val locked = now < lockedUntil

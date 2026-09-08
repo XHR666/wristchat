@@ -51,8 +51,9 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
     val c = LocalWrist.current
 
     val messages = session?.messages ?: emptyList()
-    // 自动滚到底
-    LaunchedEffect(messages.size) {
+    val draft by vm.draft.observeAsState("")
+    // 自动滚到底(以最后一条消息时间戳为 key:压缩/清空/新增都可靠触发)
+    LaunchedEffect(messages.lastOrNull()?.ts, messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
@@ -109,8 +110,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                     .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text((vm.draft.value ?: "").ifEmpty { "输入消息…" },
-                    color = if (vm.draft.value.isNullOrEmpty()) c.hint else c.text,
+                Text(draft.ifEmpty { "输入消息…" },
+                    color = if (draft.isBlank()) c.hint else c.text,
                     fontSize = 14.sp, maxLines = 1, modifier = Modifier.weight(1f))
                 Text("➤", color = c.accent, fontSize = 18.sp)
             }
@@ -118,7 +119,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
         RotaryList(listState, enabled = currentPage == 1)
     }
 
-    if (showDetails) { vm.refreshDetails() }
+    // 只在打开详情时才刷新一次,不再在组合期间调用
+    LaunchedEffect(showDetails) { if (showDetails) vm.refreshDetails() }
     val details by vm.details.observeAsState()
     if (showDetails && details != null) {
         WConfirm("对话详情", detailsText(details!!), okText = "关闭", cancelText = "",
@@ -220,7 +222,8 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     var text by remember { mutableStateOf(vm.draft.value ?: "") }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
-    PagerLock.locked = true
+    // 组合期不写全局状态:SideEffect 提交后再锁定,退出时 DisposableEffect 解锁
+    SideEffect { PagerLock.locked = true }
     DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
 
     LaunchedEffect(Unit) {

@@ -4,9 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -37,19 +35,27 @@ sealed class WSpec {
 
 class DialogController {
     var spec by mutableStateOf<WSpec?>(null)
-    fun confirm(t: String, m: String, ok: String = "确定", countdown: Int = 0, onCancel: () -> Unit = {}, onOk: () -> Unit) { spec = WSpec.Confirm(t, m, ok, countdown = countdown, onOk = onOk, onCancel = onCancel) }
-    fun choice(t: String, items: List<String>, checked: Int, onPick: (Int) -> Unit) { spec = WSpec.Choice(t, items, checked, onPick) }
-    fun input(t: String, init: String, pw: Boolean = false, ml: Boolean = false, ok: String = "保存", onOk: (String) -> Unit) { spec = WSpec.Input(t, init, pw, ml, ok, onOk) }
-    fun items(t: String, list: List<String>, onPick: (Int) -> Unit, neutral: String? = null, onNeutral: (() -> Unit)? = null) { spec = WSpec.Items(t, list, onPick, neutral, onNeutral) }
-    fun text(t: String, body: String) { spec = WSpec.Text(t, body) }
+        private set
+
+    /** 统一入口:弹出新规格;若替换掉一个尚未关闭的 Confirm,先通知其取消,避免外部状态悬挂 */
+    private fun show(s: WSpec) {
+        val old = spec
+        if (old != null && old !== s) (old as? WSpec.Confirm)?.onCancel?.invoke()
+        spec = s
+    }
+    fun confirm(t: String, m: String, ok: String = "确定", countdown: Int = 0, onCancel: () -> Unit = {}, onOk: () -> Unit) { show(WSpec.Confirm(t, m, ok, countdown = countdown, onOk = onOk, onCancel = onCancel)) }
+    fun choice(t: String, items: List<String>, checked: Int, onPick: (Int) -> Unit) { show(WSpec.Choice(t, items, checked, onPick)) }
+    fun input(t: String, init: String, pw: Boolean = false, ml: Boolean = false, ok: String = "保存", onOk: (String) -> Unit) { show(WSpec.Input(t, init, pw, ml, ok, onOk)) }
+    fun items(t: String, list: List<String>, onPick: (Int) -> Unit, neutral: String? = null, onNeutral: (() -> Unit)? = null) { show(WSpec.Items(t, list, onPick, neutral, onNeutral)) }
+    fun text(t: String, body: String) { show(WSpec.Text(t, body)) }
     fun close() { spec = null }
     fun num(t: String, init: Float, min: Float, max: Float, onOk: (Float) -> Unit) {
         val pretty = if (init % 1f == 0f) init.toInt().toString() else init.toString()
-        spec = WSpec.Input(t, pretty, ok = "保存", onOk = { s ->
+        show(WSpec.Input(t, pretty, ok = "保存", onOk = { s ->
             val v = s.replace(',', '.').toFloatOrNull()
-            if (v == null || v < min || v > max) { spec = WSpec.Text("提示", "无效输入($min-$max)"); return@Input }
+            if (v == null || v < min || v > max) { show(WSpec.Text("提示", "无效输入($min-$max)")); return@Input }
             onOk(v)
-        })
+        }))
     }
 }
 
@@ -58,7 +64,8 @@ fun WDialogHost(d: DialogController) {
     val s = d.spec ?: return
     when (s) {
         is WSpec.Confirm -> {
-            var remain by remember { mutableStateOf(s.countdown) }
+            // remember 以 spec 为 key:连续弹两个 Confirm 时倒计时/提示从新规格开始
+            var remain by remember(s) { mutableStateOf(s.countdown) }
             LaunchedEffect(s.countdown) { if (s.countdown > 0) while (remain > 0) { kotlinx.coroutines.delay(1000); remain-- } }
             val c = LocalWrist.current
             CompactDialog(title = s.title, onDismiss = { d.close(); s.onCancel() },
@@ -74,7 +81,8 @@ fun WDialogHost(d: DialogController) {
             CompactRows(s.items, s.checked) { i -> d.close(); s.onPick(i) }
         }
         is WSpec.Input -> {
-            var v by remember { mutableStateOf(s.initial) }
+            // remember 以 spec 为 key:编辑 A 后再编辑 B 时输入框内容必须从 B 的 initial 重新开始
+            var v by remember(s) { mutableStateOf(s.initial) }
             CompactDialog(title = s.title, onDismiss = { d.close() },
                 confirmText = s.ok, onConfirm = { d.close(); s.onOk(v) }, dismissText = "取消") {
                 androidx.compose.material3.OutlinedTextField(

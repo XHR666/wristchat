@@ -81,14 +81,15 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
     val listState = rememberLazyListState()
     var syncOpen by remember { mutableStateOf(false) }
 
+    // 分类页/同步页期间锁定横滑翻页:SideEffect 提交后写(不在组合期直接写),
+    // DisposableEffect 保证退出即解锁;syncOpen 切换不再出现 unlocked 空隙
+    SideEffect { PagerLock.locked = true }
+    DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
+
     if (syncOpen) {
-        PagerLock.locked = true
-        DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
         SyncOverlay(settings, vm) { syncOpen = false }
         return
     }
-    LaunchedEffect(Unit) { PagerLock.locked = true }
-    DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
 
     ScreenScaffold(title = CAT_TITLE[cat] ?: "设置",
         actions = { SmallAction("‹") { onBack() } },
@@ -230,10 +231,16 @@ private fun LazyListScope.sessionRows(s: SettingsStore, vm: SettingsViewModel, d
         if (sessions.isEmpty()) { d.text("会话", "暂无会话"); return@WCard }
         d.items("会话(点击删除)", sessions.map { "${it.title.take(12)} · ${it.messages.size}条" }, { i -> vm.deleteSession(sessions[i].id) })
     } }
-    item { WCard("扫描导入文件夹", "filesDir/import/ 备用") {
-        val r = vm.importFromFolder()
-        d.text("扫描导入", if (r.isEmpty()) "未发现可导入文件" else "已导入:${r.joinToString()}")
-    } }
+    item { val scope = rememberCoroutineScope()
+        WCard("扫描导入文件夹", "filesDir/import/ 备用") {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val r = vm.importFromFolder()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    d.text("扫描导入", if (r.isEmpty()) "未发现可导入文件" else "已导入:${r.joinToString()}")
+                }
+            }
+        }
+    }
     item { WCard("粘贴导入(手表端)", "") {
         d.input("粘贴聊天 JSON/文本", "", ml = true, ok = "导入") { t ->
             d.text("导入结果", if (t.isBlank()) "内容为空" else vm.importFromText(t, "paste.json"))
@@ -243,12 +250,27 @@ private fun LazyListScope.sessionRows(s: SettingsStore, vm: SettingsViewModel, d
 
 private fun LazyListScope.storageRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
     item { WCard("缓存详情", vm.cacheInfo.value ?: "") { vm.refreshSizes() } }
-    item { WCard("清理缓存(安全)", "WebView/临时文件") {
-        d.confirm("清理缓存", "删除 WebView 缓存与临时文件,不影响数据") { d.text("结果", "已释放 ${vm.human(vm.clearCache())}") }
-    } }
-    item { WCard("清理全部数据", "会话/记忆/技能/设置") {
-        d.confirm("清理全部数据", "将删除所有会话、记忆、技能和设置(不可恢复)", countdown = 5) { d.text("结果", "已释放 ${vm.human(vm.clearAllData())}") }
-    } }
+    // 文件删除移出主线程,避免 ANR(H10)
+    item { val scope = rememberCoroutineScope()
+        WCard("清理缓存(安全)", "WebView/临时文件") {
+            d.confirm("清理缓存", "删除 WebView 缓存与临时文件,不影响数据") {
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val freed = vm.clearCache()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { d.text("结果", "已释放 ${vm.human(freed)}") }
+                }
+            }
+        }
+    }
+    item { val scope = rememberCoroutineScope()
+        WCard("清理全部数据", "会话/记忆/技能/设置") {
+            d.confirm("清理全部数据", "将删除所有会话、记忆、技能和设置(不可恢复)", countdown = 5) {
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val freed = vm.clearAllData()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { d.text("结果", "已释放 ${vm.human(freed)}") }
+                }
+            }
+        }
+    }
 }
 
 private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, openSync: () -> Unit) {
@@ -256,7 +278,8 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
         val ctx = LocalContext.current
         val scope = rememberCoroutineScope()
         var prog by remember { mutableStateOf<Int?>(null) }
-        var job: kotlinx.coroutines.Job? = null
+        // remember 化:item 重组后仍能拿到下载任务,取消按钮才有效(H13)
+        var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
         WCard("检查更新", "") {
             val repo = UpdateRepository(s)
             io.github.xhr666.wristchat.data.AppLog.i("upd", "check start v=${s.versionName}")
@@ -350,12 +373,20 @@ private fun LazyListScope.securityRows(s: SettingsStore, d: DialogController) {
 private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
     item { WCard("版本", s.versionName) }
     item { WCard("开源许可", "MIT + 第三方库") { d.text("开源许可", licenseText()) } }
-    item {
+    item { val scope = rememberCoroutineScope()
         val app = LocalContext.current.applicationContext as WristChatApp
         WCard("运行日志(含更新)", "") {
-            d.text("运行日志", io.github.xhr666.wristchat.data.AppLog.read())
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val t = io.github.xhr666.wristchat.data.AppLog.read()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { d.text("运行日志", t) }
+            }
         }
-        WCard("查看崩溃日志", "") { d.text("崩溃日志", app.crashLogText().take(1200)) }
+        WCard("查看崩溃日志", "") {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val t = app.crashLogText().take(1200)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { d.text("崩溃日志", t) }
+            }
+        }
     }
     item {
         val ctx = LocalContext.current
