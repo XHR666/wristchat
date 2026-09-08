@@ -42,14 +42,16 @@ object Installer {
             val session = installer.openSession(sessionId)
             try {
                 val out = session.openWrite("pkg", 0, -1)
-                apk.inputStream().use { input -> out.use { o ->
+                apk.inputStream().use { input ->
                     val buf = ByteArray(64 * 1024)
                     var n: Int
-                    while (input.read(buf).also { n = it } != -1) o.write(buf, 0, n)
-                } }
-                session.fsync(out)
+                    while (input.read(buf).also { n = it } != -1) out.write(buf, 0, n)
+                    out.flush()
+                    session.fsync(out)   // 必须在 close 之前 fsync
+                    out.close()
+                }
             } finally {
-                session.close()
+                try { session.close() } catch (_: Exception) {}
             }
             val pi = PendingIntent.getBroadcast(
                 ctx, sessionId,

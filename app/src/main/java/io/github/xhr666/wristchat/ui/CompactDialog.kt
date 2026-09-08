@@ -36,6 +36,8 @@ fun CompactDialog(
     content: @Composable () -> Unit,
 ) {
     val c = LocalWrist.current
+    val cfg = androidx.compose.ui.platform.LocalConfiguration.current
+    val maxH = (cfg.screenHeightDp - 12).dp  // 弹窗不超屏,按钮永在屏内
     // 自绘覆盖层:无平台窗口动画,内容真正居中;整体限高,内容超高滚动,按钮固定可见
     Box(
         Modifier
@@ -47,7 +49,7 @@ fun CompactDialog(
             shape = RoundedCornerShape(22.dp),
             color = c.surface,
             shadowElevation = 8.dp,
-            modifier = Modifier.widthIn(min = 176.dp, max = 224.dp).heightIn(max = 340.dp),
+            modifier = Modifier.widthIn(min = 176.dp, max = 224.dp).heightIn(max = maxH),
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                 Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
@@ -58,9 +60,13 @@ fun CompactDialog(
                     Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = false)
-                        .heightIn(max = 240.dp),
+                        .heightIn(min = 20.dp),
                 ) {
-                    Column(Modifier.verticalScroll(rememberScrollState())) { content() }
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                    ) { content() }
                 }
                 if (confirmText != null || dismissText != null) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
