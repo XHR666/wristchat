@@ -35,17 +35,23 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         refreshSkillPrompt()
-        refreshSizes()
     }
 
     fun refreshSkillPrompt() {
-        SkillStoreProviderInject.refresh(skillStore)
-        refreshSizes()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            SkillStoreProviderInject.refresh(skillStore)
+            refreshSizesSync()
+        }
     }
 
+    /** 设置页刷新:全部解析/扫描放 IO,避免进入设置页卡顿 */
     fun refreshSizes() {
-        val sessions = sessionStore.list()
-        _sessionWarn.postValue(sessions.size >= MAX_SESSIONS || sessions.any { it.messages.size >= MAX_MESSAGES })
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { refreshSizesSync() }
+    }
+
+    private fun refreshSizesSync() {
+        val sessions = sessionStore.briefs()
+        _sessionWarn.postValue(sessions.size >= MAX_SESSIONS || sessions.any { it.msgCount >= MAX_MESSAGES })
         val sesBytes = sessionStore.totalSizeBytes()
         val memBytes = memoryStore.sizeBytes()
         val skillBytes = skillStore.totalSizeBytes()

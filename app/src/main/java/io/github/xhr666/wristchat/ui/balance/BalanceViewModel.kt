@@ -51,7 +51,7 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refresh() {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val result = repo.fetch()
             val supports = settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
             val peak = Pricing.isPeak(System.currentTimeMillis() / 1000)
@@ -61,9 +61,9 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
                 "🌙 空闲时段(北京时间)\n距下一高峰开始:${fmtRemain(nextSwitchSeconds())}"
             }
 
-            val appTotal = sessionStore.list().sumOf { it.totalCost }
+            val appTotal = sessionStore.briefs().sumOf { it.totalCost }
 
-            _ui.value = BalanceUi(
+            val ui = BalanceUi(
                 peak = peak,
                 peakLabel = peakLabel,
                 total = result.balance?.totalBalance ?: "--",
@@ -87,7 +87,8 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
                 },
                 supportsBalance = supports,
             )
-            _updatedAt.value = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            _ui.postValue(ui)
+            _updatedAt.postValue(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()))
         }
     }
 

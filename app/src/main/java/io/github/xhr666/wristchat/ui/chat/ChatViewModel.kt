@@ -60,29 +60,32 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _title = MutableLiveData("")
     val title: LiveData<String> = _title
 
-    private val _sessions = MutableLiveData<List<Session>>(emptyList())
-    val sessions: LiveData<List<Session>> = _sessions
+    private val _sessions = MutableLiveData<List<SessionStore.SessionBrief>>(emptyList())
+    val sessions: LiveData<List<SessionStore.SessionBrief>> = _sessions
 
     init {
         _quickInputs.value = settings.getQuickInputs()
         SkillStoreProviderInject.refresh(skillStore)
+        // 冷启动只解析最近一个会话文件(其余在进入负一屏/设置页时异步加载),避免首帧卡顿
         loadOrCreateSession()
+        refreshSessions()
     }
 
     fun loadOrCreateSession() {
-        val list = sessionStore.list()
-        val s = list.firstOrNull() ?: sessionStore.create()
+        val s = sessionStore.latest() ?: sessionStore.create()
         _session.value = s
         _title.value = s.title
-        refreshSessions()
         refreshDetails()
     }
 
+    /** 全量会话列表(负一屏/删除后刷新):解析放 IO 线程,避免主线程卡顿 */
     fun refreshSessions() {
-        _sessions.value = sessionStore.list()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _sessions.postValue(sessionStore.briefs())
+        }
     }
 
-    /** 负一屏选择会话(草稿保留) */
+    /** 负一屏选择会话(草稿保留):单文件解析,切换后会话完整加载 */
     fun setCurrentSession(id: String) {
         val s = sessionStore.load(id) ?: return
         _session.value = s
@@ -156,8 +159,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshDetails() {
         val s = _session.value ?: return
+        _details.value = detailsOf(s)
+    }
+
+    private fun detailsOf(s: Session): ConvDetails {
         val lastUsage = s.messages.lastOrNull { it.usage != null }?.usage
-        _details.value = ConvDetails(
+        return ConvDetails(
             totalTokens = s.totalTokens,
             cacheHitRate = if (s.totalTokens > 0) s.totalCacheHit.toFloat() / (s.totalCacheHit + s.totalCacheMiss).coerceAtLeast(1) else 0f,
             contextTokens = lastUsage?.promptTokens ?: 0,

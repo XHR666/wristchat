@@ -54,9 +54,48 @@ class SessionStore(private val context: Context) {
     private val dir: File = File(context.filesDir, "sessions").apply { mkdirs() }
 
     fun list(): List<Session> =
-        dir.listFiles()?.filter { it.name.endsWith(".json") }
+        dir.listFiles()?.filter { it.name.endsWith(".json") && !it.name.endsWith(".tmp") }
             ?.mapNotNull { load(it) }
             ?.sortedByDescending { it.updatedAt } ?: emptyList()
+
+    /** 只取最近更新的一个会话(冷启动用,只解析 1 个文件,避免全量解析卡主线程) */
+    fun latest(): Session? {
+        val f = dir.listFiles()?.filter { it.name.endsWith(".json") && !it.name.endsWith(".tmp") }
+            ?.maxByOrNull { it.lastModified() } ?: return null
+        return load(f)
+    }
+
+    /** 会话摘要(列表用):不加载每条消息正文,只取数量/标题/费用,省内存 */
+    data class SessionBrief(
+        val id: String,
+        val title: String,
+        val updatedAt: Long,
+        val totalCost: Double,
+        val msgCount: Int,
+    )
+
+    fun briefs(): List<SessionBrief> {
+        val files = dir.listFiles()?.filter { it.name.endsWith(".json") && !it.name.endsWith(".tmp") }
+            ?: return emptyList()
+        val out = ArrayList<SessionBrief>(files.size)
+        for (f in files) {
+            try {
+                val o = JSONObject(f.readText())
+                val msgs = JSONArray(o.optString("messages", "[]").let {
+                    if (it.startsWith("[")) it else JSONArray()
+                })
+                out.add(SessionBrief(
+                    id = o.optString("id"),
+                    title = o.optString("title", "新会话"),
+                    updatedAt = o.optLong("updatedAt"),
+                    totalCost = o.optDouble("totalCost"),
+                    msgCount = msgs.length(),
+                ))
+            } catch (e: Exception) { /* 跳过坏文件 */ }
+        }
+        out.sortByDescending { it.updatedAt }
+        return out
+    }
 
     fun load(id: String): Session? = load(File(dir, "$id.json"))
 

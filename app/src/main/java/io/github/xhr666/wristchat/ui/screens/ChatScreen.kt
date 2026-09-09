@@ -54,6 +54,9 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
 
     val messages = session?.messages ?: emptyList()
     val draft by vm.draft.observeAsState("")
+    // Markwon 全屏共享一份,避免每条消息各自初始化插件链(内存/耗时)
+    val screenCtx = LocalContext.current
+    val markwon = remember { Markwon.create(screenCtx) }
     // 自动滚到底(以最后一条消息时间戳为 key:压缩/清空/新增都可靠触发)
     LaunchedEffect(messages.lastOrNull()?.ts, messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
@@ -99,7 +102,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 10.dp),
             ) {
-                itemsIndexed(messages) { i, m -> MessageItem(m) }
+                itemsIndexed(messages) { i, m -> MessageItem(m, markwon) }
                 if (sending) item { Text("思考中…", color = c.hint, fontSize = 12.sp) }
             }
             Row(
@@ -146,7 +149,7 @@ private fun detailsText(d: io.github.xhr666.wristchat.ui.chat.ConvDetails): Stri
 
 /** 消息气泡 */
 @Composable
-fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage) {
+fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon) {
     val c = LocalWrist.current
     var expanded by remember { mutableStateOf(false) }
     val isUser = m.role == "user"
@@ -182,7 +185,7 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage) {
         ) {
             Column {
                 m.img?.let { MsgImage(it) }
-                if (m.content.isNotBlank() || m.img == null) MsgContent(m.content, isUser)
+                if (m.content.isNotBlank() || m.img == null) MsgContent(m.content, isUser, markwon)
             }
         }
         if (!isUser && (m.cost > 0 || (m.usage?.totalTokens ?: 0) > 0)) {
@@ -214,7 +217,7 @@ private fun MsgImage(name: String) {
 }
 
 @Composable
-fun MsgContent(text: String, isUser: Boolean) {
+fun MsgContent(text: String, isUser: Boolean, markwon: Markwon) {
     val ctx = LocalContext.current
     val c = LocalWrist.current
     if (text.contains("$")) {
@@ -225,7 +228,6 @@ fun MsgContent(text: String, isUser: Boolean) {
             update = { it.render(text) },
         )
     } else {
-        val markwon = remember { Markwon.create(ctx) }
         AndroidView(
             factory = { ctx2 ->
                 TextView(ctx2).apply {

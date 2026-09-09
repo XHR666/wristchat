@@ -1,5 +1,7 @@
 package io.github.xhr666.wristchat.data
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -122,7 +124,7 @@ class ChatRepository(
         }
 
         val (code, text) = try {
-            Http.postJson(url, body.toString(), apiKey)
+            withContext(Dispatchers.IO) { Http.postJson(url, body.toString(), apiKey) }
         } catch (e: Exception) {
             return ChatResult.Error("网络错误:${e.message}")
         }
@@ -177,7 +179,7 @@ class ChatRepository(
                 for (i in 0 until toolResults.length()) messages.put(toolResults.get(i))
                 val body2 = body.put("messages", messages)
                 val (code2, text2) = try {
-                    Http.postJson(url, body2.toString(), apiKey)
+                    withContext(Dispatchers.IO) { Http.postJson(url, body2.toString(), apiKey) }
                 } catch (e: Exception) {
                     return ChatResult.Error("记忆处理后网络错误:${e.message}", code)
                 }
@@ -220,10 +222,10 @@ class ChatRepository(
      * [{"type":"text","text":..},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,.."}}]
      * 否则保持纯文本字符串(官方格式,图片仅在 user 消息,每图 ≤384 tokens)。
      */
-    private fun contentOf(m: ChatMessage, vision: Boolean): Any {
+    private suspend fun contentOf(m: ChatMessage, vision: Boolean): Any {
         val img = m.img
         if (!vision || img == null || m.role != "user") return m.content
-        val b64 = Attachments.readBase64(app, img) ?: return m.content
+        val b64 = withContext(Dispatchers.IO) { Attachments.readBase64(app, img) } ?: return m.content
         return JSONArray().apply {
             if (m.content.isNotBlank()) put(JSONObject().put("type", "text").put("text", m.content))
             put(JSONObject().put("type", "image_url").put("image_url",
@@ -290,7 +292,7 @@ class ChatRepository(
             put("thinking", JSONObject().apply { put("type", "disabled") })
         }
         val (code, text) = try {
-            Http.postJson(baseUrl + path, body.toString(), apiKey, timeoutMs = Http.READ_TIMEOUT_CHAT)
+            withContext(Dispatchers.IO) { Http.postJson(baseUrl + path, body.toString(), apiKey, timeoutMs = Http.READ_TIMEOUT_CHAT) }
         } catch (e: Exception) {
             return ""
         }
@@ -318,7 +320,7 @@ class ChatRepository(
             put("thinking", JSONObject().apply { put("type", "disabled") })
         }
         val (code, text) = try {
-            Http.postJson(provider.defaultBaseUrl + provider.defaultPath, body.toString(), key, timeoutMs = Http.READ_TIMEOUT_QUICK)
+            withContext(Dispatchers.IO) { Http.postJson(provider.defaultBaseUrl + provider.defaultPath, body.toString(), key, timeoutMs = Http.READ_TIMEOUT_QUICK) }
         } catch (e: Exception) {
             return "" to null
         }

@@ -226,11 +226,12 @@ private fun LazyListScope.sessionRows(s: SettingsStore, vm: SettingsViewModel, d
         }
         WCard("导入聊天记录", "JSON / chatbox / 文本") { importer.launch(arrayOf("*/*")) }
     }
-    item { WCard("会话列表", "${vm.sessionStore.list().size} 个 · ${vm.sessionsSize.value}") {
-        val sessions = vm.sessionStore.list()
-        if (sessions.isEmpty()) { d.text("会话", "暂无会话"); return@WCard }
-        d.items("会话(点击删除)", sessions.map { "${it.title.take(12)} · ${it.messages.size}条" }, { i -> vm.deleteSession(sessions[i].id) })
-    } }
+    item { val briefs = vm.sessionStore.briefs()
+        WCard("会话列表", "${briefs.size} 个 · ${vm.sessionsSize.value}") {
+            if (briefs.isEmpty()) { d.text("会话", "暂无会话"); return@WCard }
+            d.items("会话(点击删除)", briefs.map { "${it.title.take(12)} · ${it.msgCount}条" }, { i -> vm.deleteSession(briefs[i].id) })
+        }
+    }
     item { val scope = rememberCoroutineScope()
         WCard("扫描导入文件夹", "filesDir/import/ 备用") {
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {

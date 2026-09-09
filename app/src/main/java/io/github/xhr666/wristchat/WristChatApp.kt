@@ -18,7 +18,54 @@ class WristChatApp : Application() {
         settings = SettingsStore.newInstance(this)
         settings.versionName = BuildConfig.VERSION_NAME
         installCrashLog()
+        installAnrWatchdog()
         io.github.xhr666.wristchat.data.AppLog.init(this)
+    }
+
+    /** 主线程心跳监视:卡死超过阈值时把主线程栈写入 filesDir/anr.log(诊断整表卡死) */
+    @Volatile
+    private var mainTick = System.currentTimeMillis()
+
+    private fun installAnrWatchdog() {
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        val t = Thread {
+            while (true) {
+                try {
+                    Thread.sleep(4000)
+                    val stuckMs = System.currentTimeMillis() - mainTick
+                    if (stuckMs > 8000) {
+                        mainTick = System.currentTimeMillis() // 防重复刷
+                        val sb = StringBuilder()
+                        sb.append("=== ANR suspected, main stuck ~").append(stuckMs).append("ms | ")
+                            .append(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
+                            .append(" | v").append(BuildConfig.VERSION_NAME).append('\n')
+                        Thread.getAllStackTraces().forEach { (thread, st) ->
+                            if (thread.name == "main") {
+                                sb.append("main stack:\n")
+                                st.take(40).forEach { sb.append("    at ").append(it).append('\n') }
+                            }
+                        }
+                        val anr = File(filesDir, "anr.log")
+                        anr.appendText(sb.toString())
+                        if (anr.length() > 100_000) anr.writeText(anr.readText().takeLast(90_000))
+                    }
+                } catch (e: InterruptedException) {
+                    return@Thread
+                } catch (e: Exception) {
+                    // 忽略
+                }
+            }
+        }
+        t.isDaemon = true
+        t.start()
+        // 主线程每 2 秒打一次心跳;卡死则心跳停止,看门狗可感知
+        val beat = object : Runnable {
+            override fun run() {
+                mainTick = System.currentTimeMillis()
+                mainHandler.postDelayed(this, 2000)
+            }
+        }
+        mainHandler.post(beat)
     }
 
     /** 未捕获异常写入 filesDir/crash.log(设置→关于→查看崩溃日志) */

@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xhr666.wristchat.data.SessionStore
 import io.github.xhr666.wristchat.data.SettingsStore
 import io.github.xhr666.wristchat.ui.*
 import io.github.xhr666.wristchat.ui.chat.ChatViewModel
@@ -20,7 +21,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 负一屏:会话列表(AI 标题),点击打开聊天 */
+/** 负一屏:会话列表(AI 标题),点击打开聊天;只持摘要,不占内存 */
 @Composable
 fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () -> Unit) {
     val sessions by vm.sessions.observeAsState(emptyList())
@@ -28,11 +29,11 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
     val listState = rememberLazyListState()
     val c = LocalWrist.current
 
-    // 每次进入负一屏都刷新(避免冷启动时序问题;M16:以页码为 key)
+    // 每次进入负一屏都刷新(IO 线程解析,避免卡顿)
     LaunchedEffect(currentPage) {
         if (currentPage == 0) { kotlinx.coroutines.delay(400); vm.refreshSessions() }
     }
-    var deleteTarget by remember { mutableStateOf<io.github.xhr666.wristchat.data.Session?>(null) }
+    var deleteTarget by remember { mutableStateOf<SessionStore.SessionBrief?>(null) }
 
     ScreenScaffold(
         title = if (sessions.isEmpty()) "会话" else "会话(${sessions.size})",
@@ -80,7 +81,7 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
     }
 }
 
-private fun sub(s: io.github.xhr666.wristchat.data.Session): String {
+private fun sub(s: SessionStore.SessionBrief): String {
     val cost = if (s.totalCost > 0) " · ¥%.3f".format(s.totalCost) else ""
-    return "${s.messages.size} 条 · ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.updatedAt))}$cost"
+    return "${s.msgCount} 条 · ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.updatedAt))}$cost"
 }
