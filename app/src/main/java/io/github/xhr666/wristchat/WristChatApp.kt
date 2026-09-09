@@ -97,4 +97,10 @@ class WristChatApp : Application() {
         val f = File(filesDir, "crash.log")
         return if (f.exists()) f.readText().ifBlank { "(空)" } else "(无崩溃记录)"
     }
+
+    /** ANR/卡死堆栈(看门狗写入);查看崩溃日志卡死时可看这个定位主线程 */
+    fun anrLogText(): String {
+        val f = File(filesDir, "anr.log")
+        return if (f.exists()) f.readText().ifBlank { "(空)" } else "(无 ANR 记录)"
+    }
 }

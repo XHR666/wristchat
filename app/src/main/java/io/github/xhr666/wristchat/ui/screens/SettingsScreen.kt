@@ -80,11 +80,27 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
     val dialogs = remember { DialogController() }
     val listState = rememberLazyListState()
     var syncOpen by remember { mutableStateOf(false) }
+    var logPage by remember { mutableStateOf<String?>(null) }  // crash / anr / run
 
     // 分类页/同步页期间锁定横滑翻页:SideEffect 提交后写(不在组合期直接写),
     // DisposableEffect 保证退出即解锁;syncOpen 切换不再出现 unlocked 空隙
     SideEffect { PagerLock.locked = true }
     DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
+
+    // 日志走全屏页而非弹窗:弹窗在部分机型上有卡死风险,日志必须能稳定打开
+    logPage?.let { t ->
+        val app = LocalContext.current.applicationContext as io.github.xhr666.wristchat.WristChatApp
+        LogViewerScreen(
+            title = when (t) { "crash" -> "崩溃日志"; "anr" -> "ANR/卡死日志"; else -> "运行日志" },
+            load = when (t) {
+                "crash" -> { { app.crashLogText() } }
+                "anr" -> { { app.anrLogText() } }
+                else -> { { io.github.xhr666.wristchat.data.AppLog.read() } }
+            },
+            onBack = { logPage = null },
+        )
+        return
+    }
 
     if (syncOpen) {
         SyncOverlay(settings, vm) { syncOpen = false }
@@ -105,7 +121,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                     "storage" -> storageRows(settings, vm, dialogs)
                     "update" -> updateRows(settings, dialogs) { syncOpen = true }
                     "security" -> securityRows(settings, dialogs)
-                    "about" -> aboutRows(settings, vm, dialogs)
+                    "about" -> aboutRows(settings, vm, dialogs) { logPage = it }
                 }
             }
             RotaryList(listState, enabled = LocalCurrentPage.current == 3)
@@ -371,23 +387,13 @@ private fun LazyListScope.securityRows(s: SettingsStore, d: DialogController) {
     }
 }
 
-private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
+private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController, openLog: (String) -> Unit) {
     item { WCard("版本", s.versionName) }
     item { WCard("开源许可", "MIT + 第三方库") { d.text("开源许可", licenseText()) } }
-    item { val scope = rememberCoroutineScope()
-        val app = LocalContext.current.applicationContext as WristChatApp
-        WCard("运行日志(含更新)", "") {
-            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val t = io.github.xhr666.wristchat.data.AppLog.read()
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { d.text("运行日志", t) }
-            }
-        }
-        WCard("查看崩溃日志", "") {
-            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val t = app.crashLogText().take(1200)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { d.text("崩溃日志", t) }
-            }
-        }
+    item {
+        WCard("查看崩溃日志", "crash.log · 闪退堆栈") { openLog("crash") }
+        WCard("ANR/卡死日志", "anr.log · 界面卡死的主线程堆栈") { openLog("anr") }
+        WCard("运行日志", "app.log · 更新/弹窗操作记录") { openLog("run") }
     }
     item {
         val ctx = LocalContext.current

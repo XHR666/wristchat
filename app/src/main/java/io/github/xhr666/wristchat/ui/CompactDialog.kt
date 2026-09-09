@@ -54,7 +54,7 @@ fun CompactDialog(
         Surface(
             shape = RoundedCornerShape(22.dp),
             color = c.surface,
-            shadowElevation = 8.dp,
+            shadowElevation = 0.dp,
             modifier = Modifier.widthIn(min = 176.dp, max = 224.dp).heightIn(max = maxH),
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
