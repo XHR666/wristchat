@@ -70,7 +70,13 @@ class WristChatApp : Application() {
 
     /** 未捕获异常写入 filesDir/crash.log(设置→关于→查看崩溃日志) */
     private fun installCrashLog() {
+        // 关键:必须在"安装之前"捕获上一个处理器。
+        // 之前写在处理器内部调 getDefaultUncaughtExceptionHandler(),拿到的就是它自己 →
+        // 自己调自己无限递归(ANR 日志里 m1.c.uncaughtException 几十层),主线程被占死、整表卡顿后崩溃。
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        val handling = java.util.concurrent.atomic.AtomicBoolean(false)
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            if (!handling.compareAndSet(false, true)) return@setDefaultUncaughtExceptionHandler // 防重入
             try {
                 val sw = StringWriter()
                 throwable.printStackTrace(PrintWriter(sw))
@@ -85,11 +91,11 @@ class WristChatApp : Application() {
                 if (log.length() > 100_000) {
                     log.writeText(log.readText().takeLast(90_000))
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // 记录失败也不能影响后续处理
             }
-            // 交给系统默认处理(保证闪退提示仍在)
-            val prev = Thread.getDefaultUncaughtExceptionHandler()
-            prev?.uncaughtException(thread, throwable)
+            // 交给系统默认处理器(保证闪退提示仍在);绝不再回调自己
+            try { prev?.uncaughtException(thread, throwable) } catch (e: Throwable) {}
         }
     }
 

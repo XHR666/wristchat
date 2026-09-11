@@ -98,6 +98,7 @@ fun WDialogHost(d: DialogController) {
                 androidx.compose.material3.OutlinedTextField(
                     value = v, onValueChange = { if (it.length <= 8000) v = it },
                     singleLine = !s.multiline,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
                     visualTransformation = if (s.password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
                 )
             }

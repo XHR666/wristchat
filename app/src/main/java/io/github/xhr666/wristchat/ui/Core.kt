@@ -243,7 +243,7 @@ fun WInput(title: String, initial: String, password: Boolean = false, multiline:
             value = v,
             onValueChange = { if (it.length <= 8000) v = it },
             singleLine = !multiline,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
             visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         )
     }

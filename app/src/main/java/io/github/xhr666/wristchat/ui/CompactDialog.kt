@@ -61,17 +61,15 @@ fun CompactDialog(
                 Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-                // 内容区:固定最大高(给标题/按钮留位),超高滚动;无 weight,测量稳定
+                // 内容区:只给"有界最大高度",自身不再套 verticalScroll。
+                // (滚动套滚动会让内层可滚动组件拿到无限高约束 → IllegalStateException 崩溃)
+                // 各内容自带滚动(CompactRows/Text 分支),OutlinedTextField 用有界高度。
                 Box(
                     Modifier
                         .fillMaxWidth()
                         .heightIn(max = (maxH - 92.dp)),
                 ) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                    ) { content() }
+                    content()
                 }
                 if (confirmText != null || dismissText != null) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
