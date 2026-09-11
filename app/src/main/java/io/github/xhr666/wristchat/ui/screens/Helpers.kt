@@ -68,3 +68,28 @@ fun queryName(ctx: Context, uri: Uri): String? = runCatching {
 }.getOrNull()
 
 fun licenseText(): String = LICENSE_TEXT
+
+/** 导出三个日志到公共 Download/WristChat/(数据线/文件管理器可取),返回结果文案 */
+fun exportLogs(ctx: Context): String {
+    val app = ctx.applicationContext as? io.github.xhr666.wristchat.WristChatApp ?: return "导出失败:上下文异常"
+    val items = listOf(
+        "crash.log" to app.crashLogText(),
+        "anr.log" to app.anrLogText(),
+        "app.log" to io.github.xhr666.wristchat.data.AppLog.read(),
+    )
+    return try {
+        val resolver = ctx.contentResolver
+        var n = 0
+        for ((name, text) in items) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/WristChat")
+            }
+            val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: continue
+            resolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+            n++
+        }
+        "已导出 $n 个日志到 Download/WristChat/"
+    } catch (e: Exception) { "导出失败:${e.message}" }
+}

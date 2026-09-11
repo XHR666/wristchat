@@ -44,10 +44,19 @@ fun SyncOverlay(settings: SettingsStore, vm: SettingsViewModel, onClose: () -> U
     LaunchedEffect(Unit) {
         val s = settings
         if (s.syncPin.length != 4) s.syncPin = (1000..9999).random().toString()
+        val app = ctx.applicationContext as WristChatApp
         val svc = SyncServer(
             pin = s.syncPin,
             readConfig = { configJson(settings) },
             applyConfig = { body -> applyConfigJson(settings, vm, body) },
+            readLog = { name ->
+                when (name) {
+                    "crash" -> app.crashLogText()
+                    "anr" -> app.anrLogText()
+                    "app" -> io.github.xhr666.wristchat.data.AppLog.read()
+                    else -> "(未知日志:$name)"
+                }
+            },
         )
         if (svc.start()) {
             server = svc
@@ -94,6 +103,7 @@ fun SyncOverlay(settings: SettingsStore, vm: SettingsViewModel, onClose: () -> U
         Text(url, color = c.text, fontSize = 11.sp, textAlign = TextAlign.Center)
         Text("密钥:${settings.syncPin}", color = c.text, fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
         Text("手机需与手表同一网络;打开网页先输入密钥", color = c.hint, fontSize = 10.sp, textAlign = TextAlign.Center)
+        Text("日志:连上后网页底部「打开日志页」(崩溃/卡死/运行日志)", color = c.hint, fontSize = 10.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
         Row {
             androidx.compose.material3.TextButton(onClick = {

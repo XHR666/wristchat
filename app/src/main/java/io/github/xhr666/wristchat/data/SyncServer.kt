@@ -15,6 +15,7 @@ class SyncServer(
     private val pin: String,
     private val readConfig: () -> String,
     private val applyConfig: (String) -> String,
+    private val readLog: (String) -> String = { "" },
 ) {
     @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var running = false
@@ -85,9 +86,14 @@ class SyncServer(
             val response = when {
                 path.startsWith("/api/config") -> handleConfig(path)
                 path.startsWith("/api/save") -> handleSave(path, body)
+                path.startsWith("/logs") -> handleLogs(path)
                 else -> PAGE_HTML
             }
-            val contentType = if (path.startsWith("/api/")) "application/json; charset=utf-8" else "text/html; charset=utf-8"
+            val contentType = when {
+                path.startsWith("/api/") -> "application/json; charset=utf-8"
+                path.startsWith("/logs/") -> "text/plain; charset=utf-8"
+                else -> "text/html; charset=utf-8"
+            }
             val out = socket.getOutputStream()
             val bytes = response.toByteArray(Charsets.UTF_8)
             out.write("HTTP/1.1 200 OK\r\nContent-Type: $contentType\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n".toByteArray())
@@ -108,6 +114,40 @@ class SyncServer(
         if (!checkPin(path)) return """{"ok":false,"error":"PIN 错误"}"""
         return """{"ok":true,"config":${readConfig()}}"""
     }
+
+    /** 日志页:/logs?pin= 汇总页;/logs/crash|anr|app?pin=&lines= 纯文本尾巴 */
+    private fun handleLogs(path: String): String {
+        if (!checkPin(path)) return "PIN 错误:网址后加 ?pin=四位密钥"
+        val name = path.removePrefix("/logs").trim('/').substringBefore('?')
+        val lines = (path.substringAfter("lines=", "300").substringBefore("&").toIntOrNull() ?: 300).coerceIn(10, 5000)
+        val pin = path.substringAfter("pin=", "").substringBefore("&")
+        if (name.isEmpty() || name == "all") {
+            val sb = StringBuilder()
+            sb.append("<html><head><meta charset=\"utf-8\">")
+            sb.append("<meta name=viewport content=\"width=device-width,initial-scale=1\">")
+            sb.append("<title>WristChat 日志</title><style>body{background:#0f1419;color:#e8eaed;font-family:system-ui,sans-serif;padding:14px}")
+            sb.append("h2{font-size:16px;margin:18px 0 6px;color:#9aa4af}pre{background:#1b2228;padding:10px;border-radius:10px;overflow:auto;font-size:12px;line-height:1.5;max-height:60vh;white-space:pre-wrap;word-break:break-all}")
+            sb.append("a{color:#4d9fff;display:inline-block;margin-right:14px;font-size:14px}</style></head><body>")
+            sb.append("<h1 style=\"font-size:19px\">WristChat 日志(最后 $lines 行)</h1>")
+            sb.append("<p style=\"font-size:13px;color:#9aa4af\">点下面链接可切纯文本页,方便全选复制;也可直接长按复制。</p>")
+            for ((key, label) in listOf("crash" to "崩溃日志 crash.log", "anr" to "卡死日志 anr.log", "app" to "运行日志 app.log")) {
+                sb.append("<h2>$label <a href=\"/logs/$key?pin=$pin&lines=$lines\">纯文本</a></h2>")
+                sb.append("<pre>").append(escapeHtml(tail(readLog(key), lines))).append("</pre>")
+            }
+            sb.append("</body></html>")
+            return sb.toString()
+        }
+        return tail(readLog(name), lines)
+    }
+
+    private fun tail(text: String, lines: Int): String {
+        if (text.isBlank()) return "(空)"
+        val all = text.lines()
+        return if (all.size <= lines) text else all.takeLast(lines).joinToString("\n")
+    }
+
+    private fun escapeHtml(s: String): String = s
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     private fun handleSave(path: String, body: String): String {
         if (!checkPin(path)) return """{"ok":false,"error":"PIN 错误"}"""
@@ -165,6 +205,9 @@ button:active{opacity:.85}
 <textarea id="chatImport" rows="4" placeholder='{"messages":[{"role":"user","content":"hi"}]}'></textarea>
 <button onclick="save()">保存到手表</button>
 <div id="msg2"></div>
+<h2>日志</h2>
+<p class="sub" style="text-align:left">排查崩溃/卡死时用,手机浏览器直接看</p>
+<a id="loglink" href="#" style="display:block;text-align:center;color:#4d9fff;font-size:16px;padding:10px">打开日志页</a>
 </div>
 <script>
 var CUR='';
@@ -183,6 +226,7 @@ function load(){
     set('customPrompt',c.customPrompt);
     document.getElementById('quickInputs').value=(c.quickInputs||[]).join('\n');
     document.getElementById('form').style.display='block';
+    document.getElementById('loglink').href='/logs?pin='+CUR;
     show('已连接','ok');
   }).catch(function(){show('无法连接,确认手机与手表同一网络','err')});
 }

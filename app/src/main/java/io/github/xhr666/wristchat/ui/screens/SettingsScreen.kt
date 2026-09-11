@@ -395,6 +395,18 @@ private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: 
         WCard("ANR/卡死日志", "anr.log · 界面卡死的主线程堆栈") { openLog("anr") }
         WCard("运行日志", "app.log · 更新/弹窗操作记录") { openLog("run") }
     }
+    item { val scope = rememberCoroutineScope()
+        val ctx = LocalContext.current
+        WCard("导出日志到 Download", "Download/WristChat/ · 数据线可取出") {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val r = exportLogs(ctx.applicationContext)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(ctx, r, android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        WCard("日志文件位置", "/data/data/io.github.xhr666.wristchat/files/\ncrash.log · anr.log · app.log\n(应用私有目录;或用「手机同步」网页查看)")
+    }
     item {
         val ctx = LocalContext.current
         WCard("开源仓库", "github.com/XHR666/wristchat") {
