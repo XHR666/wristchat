@@ -39,8 +39,8 @@ fun LogViewerScreen(title: String, load: suspend () -> String, onBack: () -> Uni
                 modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
             ) {
-                // 分行渲染,最长只取尾部 600 行,避免超长单节点
-                val lines = t.lines().takeLast(600)
+                // 分行渲染:只取最近 600 行,并倒序 —— 最新的在最上面,不用往下翻
+                val lines = t.lines().takeLast(600).reversed()
                 items(lines.size) { i ->
                     Text(lines[i].ifBlank { " " }, color = c.text, fontSize = 11.sp,
                         lineHeight = 14.sp, modifier = Modifier.padding(vertical = 1.dp))

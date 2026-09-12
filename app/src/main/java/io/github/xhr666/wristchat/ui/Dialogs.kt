@@ -72,6 +72,10 @@ class DialogController {
 @Composable
 fun WDialogHost(d: DialogController) {
     val s = d.spec ?: return
+    // 诊断:真正进入渲染时记一条(运行日志里能看到 "open" 后是否紧跟 "host")
+    LaunchedEffect(s) {
+        runCatching { io.github.xhr666.wristchat.data.AppLog.i("dlg", "host ${s.logTag()}") }
+    }
     when (s) {
         is WSpec.Confirm -> {
             // remember 以 spec 为 key:连续弹两个 Confirm 时倒计时/提示从新规格开始
@@ -121,4 +125,13 @@ fun WDialogHost(d: DialogController) {
                 modifier = Modifier.verticalScroll(rememberScrollState()).padding(top = 4.dp))
         }
     }
+}
+
+/** 日志用的规格标识 */
+private fun WSpec.logTag(): String = when (this) {
+    is WSpec.Confirm -> "Confirm:$title"
+    is WSpec.Choice -> "Choice:$title"
+    is WSpec.Input -> "Input:$title"
+    is WSpec.Items -> "Items:$title"
+    is WSpec.Text -> "Text:$title"
 }

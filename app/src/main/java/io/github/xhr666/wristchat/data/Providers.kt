@@ -25,7 +25,7 @@ object Providers {
         defaultBaseUrl = "https://api.deepseek.com",
         defaultPath = "/chat/completions",
         supportsBalance = true,
-        models = listOf("deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp"),
+        models = listOf("deepseek-flash", "deepseek-v4-pro"),
     )
 
     val qwen = ProviderConfig(

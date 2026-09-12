@@ -11,13 +11,14 @@ object Pricing {
 
     data class Price(val hit: DoubleArray, val miss: DoubleArray, val out: DoubleArray)
 
-    // 谷/峰 顺序
-    private val BASE = Price(doubleArrayOf(0.05, 0.10), doubleArrayOf(1.5, 3.0), doubleArrayOf(4.5, 9.0))
+    // 谷/峰 顺序。官方 2026-09(deepseek-flash = V4.1-Flash)核对:
+    // 命中 0.02/0.04 · 未命中 1/2 · 输出 4/8(元/百万 tokens);v4-pro 保持原价
+    private val BASE = Price(doubleArrayOf(0.02, 0.04), doubleArrayOf(1.0, 2.0), doubleArrayOf(4.0, 8.0))
     private val PRO = Price(doubleArrayOf(0.15, 0.30), doubleArrayOf(4.5, 9.0), doubleArrayOf(13.5, 27.0))
 
     fun priceFor(model: String): Price {
         val m = model.lowercase()
-        return if ("pro" in m && "vision" !in m) PRO else BASE
+        return if ("pro" in m) PRO else BASE
     }
 
     /**
@@ -42,6 +43,7 @@ object Pricing {
             (outTokens / 1e6) * p.out[pi]
     }
 
+    /** 仅调试/内部使用;界面不再展示价格(价格常变) */
     fun priceLabel(model: String): String {
         val p = priceFor(model)
         val m = "%.2f/%.2f".format(p.hit[0], p.hit[1])

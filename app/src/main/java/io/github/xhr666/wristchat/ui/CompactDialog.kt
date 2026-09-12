@@ -37,48 +37,41 @@ fun CompactDialog(
 ) {
     val c = LocalWrist.current
     val cfg = androidx.compose.ui.platform.LocalConfiguration.current
-    val maxH = (cfg.screenHeightDp - 12).dp  // 弹窗不超屏,按钮永在屏内
-    // 自绘覆盖层:无平台窗口动画,内容真正居中;整体限高,内容超高滚动,按钮固定可见
-    // 遮罩(垫底)消费触摸并支持点外部关闭;Surface 在上层,内部空白点击不会误关弹窗
-    val maskClick = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    Box(
-        Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
+    val maxH = (cfg.screenHeightDp - 16).dp
+    // 改用系统 Dialog 窗口承载:自绘全屏覆盖层在部分手表上不显示/被页面布局影响;
+    // 系统窗口天然置顶、自带遮罩(点击外部关闭),不再需要自绘 mask。
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xAA000000))
-                .clickable(interactionSource = maskClick, indication = null) { onDismiss() },
-        )
-        Surface(
-            shape = RoundedCornerShape(22.dp),
-            color = c.surface,
-            shadowElevation = 0.dp,
-            modifier = Modifier.widthIn(min = 176.dp, max = 224.dp).heightIn(max = maxH),
-        ) {
-            Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(6.dp))
-                // 内容区:只给"有界最大高度",自身不再套 verticalScroll。
-                // (滚动套滚动会让内层可滚动组件拿到无限高约束 → IllegalStateException 崩溃)
-                // 各内容自带滚动(CompactRows/Text 分支),OutlinedTextField 用有界高度。
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = (maxH - 92.dp)),
-                ) {
-                    content()
-                }
-                if (confirmText != null || dismissText != null) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        if (dismissText != null) {
-                            TextButton(onClick = onDismiss) { Text(dismissText, color = c.hint, fontSize = 13.sp) }
-                        }
-                        if (confirmText != null) {
-                            TextButton(onClick = onConfirm ?: {}, enabled = confirmEnabled) {
-                                Text(confirmText, color = if (confirmEnabled) c.accent else c.hint, fontSize = 13.sp)
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = c.surface,
+                shadowElevation = 0.dp,
+                modifier = Modifier.widthIn(min = 176.dp, max = 224.dp).heightIn(max = maxH),
+            ) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(6.dp))
+                    // 内容区:只给有界最大高度,滚动交给内容自身那一层(避免滚动套滚动崩溃)
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = (maxH - 100.dp)),
+                    ) {
+                        content()
+                    }
+                    if (confirmText != null || dismissText != null) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                            if (dismissText != null) {
+                                TextButton(onClick = onDismiss) { Text(dismissText, color = c.hint, fontSize = 13.sp) }
+                            }
+                            if (confirmText != null) {
+                                TextButton(onClick = onConfirm ?: {}, enabled = confirmEnabled) {
+                                    Text(confirmText, color = if (confirmEnabled) c.accent else c.hint, fontSize = 13.sp)
+                                }
                             }
                         }
                     }

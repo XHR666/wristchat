@@ -28,8 +28,17 @@ class ChatRepository(
 ) {
 
     companion object {
-        const val VISION_MODEL = "deepseek-v4-flash-vision-exp"
-        fun supportsVision(model: String): Boolean = model.contains("vision", ignoreCase = true)
+        const val VISION_MODEL = "deepseek-flash"
+        /**
+         * 官方 2026-09 起:deepseek-flash(= DeepSeek-V4.1-Flash)同时支持文本与图片;
+         * 旧名 deepseek-v4-flash / deepseek-v4-flash-vision-exp 已下线但可调用(自动路由到 V4.1-Flash)。
+         * v4-pro 系列不支持图片。
+         */
+        fun supportsVision(model: String): Boolean {
+            val m = model.lowercase()
+            if (m.contains("pro")) return false
+            return m.contains("vision") || m.contains("flash") || m.contains("v4.1")
+        }
     }
 
     private val MEMORY_TOOL_SCHEMA = JSONObject().apply {
@@ -73,7 +82,7 @@ class ChatRepository(
         val apiKey = settings.apiKey
         if (apiKey.isBlank()) return ChatResult.Error("请先在设置中填写 API Key")
         val url = provider.defaultBaseUrl + provider.defaultPath
-        val model = settings.model.ifBlank { provider.models.firstOrNull() ?: "deepseek-v4-flash" }
+        val model = settings.model.ifBlank { provider.models.firstOrNull() ?: "deepseek-flash" }
         val vision = supportsVision(model)
         if (imageFile != null && !vision) {
             return ChatResult.Error("当前模型($model)不支持图片,请在设置里切换到 $VISION_MODEL")

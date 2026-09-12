@@ -33,7 +33,7 @@ class SettingsStore(context: Context) {
 
     // ---- 模型 / 思考 / 参数 ----
     var model: String
-        get() = prefs.getString(KEY_MODEL, "deepseek-v4-flash") ?: "deepseek-v4-flash"
+        get() = prefs.getString(KEY_MODEL, "deepseek-flash") ?: "deepseek-flash"
         set(v) = prefs.edit().putString(KEY_MODEL, v.trim()).apply()
 
     var thinkingEnabled: Boolean

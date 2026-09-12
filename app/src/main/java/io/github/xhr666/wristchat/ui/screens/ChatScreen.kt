@@ -284,7 +284,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         }
     }
     fun launchPicker() {
-        if (!vm.providerIsDeepSeek()) { hint = "图片仅 DeepSeek 支持(需 deepseek-v4-flash-vision-exp)"; return }
+        if (!vm.providerIsDeepSeek()) { hint = "图片仅 DeepSeek 支持(需 deepseek-flash)"; return }
         if (!vm.modelSupportsVision()) { visionAsk = true; return }
         hint = null
         try { picker.launch("image/*") }
@@ -336,7 +336,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     }
 
     if (visionAsk) {
-        WConfirm("需要视觉模型", "图片需要 deepseek-v4-flash-vision-exp。\n切换当前对话模型?",
+        WConfirm("需要视觉模型", "图片需要 deepseek-flash(旧名 v4-flash / vision-exp 会自动路由)。\n切换当前对话模型?",
             okText = "切换", onOk = {
                 vm.switchToVisionModel()
                 visionAsk = false

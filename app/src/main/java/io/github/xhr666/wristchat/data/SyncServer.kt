@@ -188,7 +188,7 @@ button:active{opacity:.85}
 <label>最大输出 tokens</label><input id="maxTokens" type="number" min="256" max="65536">
 <label>思考模式</label><select id="thinking"><option value="true">开</option><option value="false">关</option></select>
 <label>思考强度</label><select id="effort"><option value="low">低</option><option value="high">高</option><option value="max">最大</option></select>
-<label>模型</label><input id="model" placeholder="deepseek-v4-flash">
+<label>模型</label><input id="model" placeholder="deepseek-flash">
 <h2>服务</h2>
 <label>服务商</label><select id="provider"><option value="deepseek">DeepSeek</option><option value="qwen">通义千问</option><option value="glm">智谱 GLM</option><option value="kimi">Kimi</option><option value="volcano">火山方舟</option><option value="custom">自定义</option></select>
 <label>API Base URL</label><input id="baseUrl" placeholder="https://api.deepseek.com">

@@ -81,8 +81,7 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
                 },
                 hint = buildString {
                     if (!supports) append("⚠ 仅支持 DeepSeek 余额查询\n")
-                    append("高峰:周一至五 9-12、14-18(北京时间),其余含周末全空闲\n")
-                    append(Pricing.priceLabel(settings.model))
+                    append("高峰:周一至五 9-12、14-18(北京时间),其余含周末全空闲")
                     result.error?.let { append("\n上次错误:$it") }
                 },
                 supportsBalance = supports,
@@ -92,26 +91,26 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 距当前时段结束(北京时间);周末全天谷价,下一个高峰=周一 9:00 */
+    /**
+     * 距当前时段结束(北京时间)。官方:高峰 = 周一至五 9:00-12:00、14:00-18:00,其余(含周末)空闲。
+     * 注意:必须用"当天已过秒数"计算,原来只减了分秒、漏了小时,导致倒计时偏大好几个小时。
+     */
     private fun nextSwitchSeconds(): Long {
         val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
         val dow = cal.get(Calendar.DAY_OF_WEEK)
-        val hour = cal.get(Calendar.HOUR_OF_DAY)
-        val min = cal.get(Calendar.MINUTE)
-        val sec = cal.get(Calendar.SECOND)
-        val intoHour = min * 60 + sec
-        val isWeekend = dow == Calendar.SATURDAY || dow == Calendar.SUNDAY
-        if (isWeekend) {
-            // 到周一 9:00
-            val daysToMon = if (dow == Calendar.SATURDAY) 2 else 1
-            return (daysToMon * 86400L + (9 * 3600) - intoHour)
+        val secOfDay = (cal.get(Calendar.HOUR_OF_DAY) * 3600 + cal.get(Calendar.MINUTE) * 60 + cal.get(Calendar.SECOND)).toLong()
+        val weekend = dow == Calendar.SATURDAY || dow == Calendar.SUNDAY
+        if (weekend) {
+            // 周末全空闲 → 下一个高峰是周一 9:00
+            val daysToMon = if (dow == Calendar.SATURDAY) 2L else 1L
+            return daysToMon * 86400L + 9 * 3600 - secOfDay
         }
         return when {
-            hour in 9 until 12 -> (12 * 3600 - intoHour).toLong()
-            hour in 12 until 14 -> (14 * 3600 - intoHour).toLong()
-            hour in 14 until 18 -> (18 * 3600 - intoHour).toLong()
-            hour in 18..23 -> ((24 + 9) * 3600 - intoHour).toLong()
-            else -> (9 * 3600 - intoHour).toLong() // 0-8 点
+            secOfDay < 9 * 3600 -> 9 * 3600 - secOfDay            // 凌晨/早间 → 9:00(高峰开始)
+            secOfDay < 12 * 3600 -> 12 * 3600 - secOfDay          // 高峰 → 12:00(高峰结束)
+            secOfDay < 14 * 3600 -> 14 * 3600 - secOfDay          // 午休空闲 → 14:00(高峰开始)
+            secOfDay < 18 * 3600 -> 18 * 3600 - secOfDay          // 高峰 → 18:00(高峰结束)
+            else -> (24 * 3600 - secOfDay) + 9 * 3600             // 18:00 后 → 次日 9:00
         }
     }
 

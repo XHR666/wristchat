@@ -17,6 +17,10 @@ class WristChatApp : Application() {
         super.onCreate()
         settings = SettingsStore.newInstance(this)
         settings.versionName = BuildConfig.VERSION_NAME
+        // 旧模型名已下线(请求会被自动路由到 V4.1-Flash),统一改成新名 deepseek-flash
+        if (settings.model.trim().lowercase() in setOf("deepseek-v4-flash", "deepseek-v4-flash-vision-exp")) {
+            settings.model = "deepseek-flash"
+        }
         installCrashLog()
         installAnrWatchdog()
         io.github.xhr666.wristchat.data.AppLog.init(this)

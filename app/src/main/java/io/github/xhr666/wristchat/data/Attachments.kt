@@ -11,7 +11,7 @@ import java.io.File
 
 /**
  * 图片附件存储:filesDir/attachments/。
- * 官方 vision 模型(deepseek-v4-flash-vision-exp)要求 image_url 走 data:base64 内联,
+ * 官方视觉模型(deepseek-flash / V4.1-Flash)要求 image_url 走 data:base64 内联,
  * 服务端会把大图自动缩到 ~800×800(每张 ≤384 tokens),所以本地先缩到 1280 内即可,减小请求体。
  */
 object Attachments {
