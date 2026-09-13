@@ -329,7 +329,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         }
         hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp)) }
         TextField(
-            value = tv, onValueChange = { if (it.text.length <= 8000) tv = it },
+            value = tv, onValueChange = { tv = it },   // 不再拦截/改写:任何拦截都会让输入法组合区状态失步
             modifier = Modifier
                 .fillMaxSize()
                 .focusRequester(focusRequester),

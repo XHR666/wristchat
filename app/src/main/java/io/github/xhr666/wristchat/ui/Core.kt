@@ -66,7 +66,7 @@ object RotaryBus {
     // 累积式:表冠快速旋转时事件非常密集,原实现用 SharedFlow 缓冲(16)溢出即丢事件,
     // 于是"转得快反而走得慢"。改为累加 + 每帧消费一次,快转不丢步。
     private val acc = java.util.concurrent.atomic.AtomicInteger(0)
-    private const val LIMIT = 320
+    private const val LIMIT = 900
     fun emit(delta: Int) {
         val v = acc.addAndGet(delta)
         if (v > LIMIT) acc.set(LIMIT) else if (v < -LIMIT) acc.set(-LIMIT)
@@ -80,7 +80,8 @@ fun RotaryList(listState: LazyListState, enabled: Boolean) {
         if (!enabled) return@LaunchedEffect
         while (true) {
             withFrameNanos { }                       // 每帧把累积的旋转量一次性消费
-            val d = RotaryBus.drain()
+            // 每帧最多推进 240px,快速旋转也不会"瞬移"
+            val d = RotaryBus.drain().coerceIn(-240, 240)
             if (d != 0) listState.dispatchRawDelta(d.toFloat())
         }
     }
@@ -140,14 +141,17 @@ fun ScreenScaffold(
     BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
         val w = maxWidth; val h = maxHeight
         // 底部圆边内缩量:越靠底部,可视宽度越窄 → 给内容列表留出安全边距
-        val bottomSafe = roundInset(w, h, h - 4.dp) + 12.dp
+        // 圆边内缩量按几何算会到 ~90dp(那是水平方向的内缩),作为"底部留白"太大,
+        // 会导致滑到底还有一大段空白;这里收敛到 26dp:末项四角可能被圆边轻切,和微思一致。
+        val bottomSafe = (roundInset(w, h, h - 4.dp) + 12.dp).coerceAtMost(26.dp)
         val showClock = showTimeAlways || showTimeAtTop
         val topPad = if (showClock) 30.dp else 12.dp
         // 让首/末项中心落在"屏幕中心"(h/2),而不是列表可视区中心
         val itemHalf = 36.dp
         val listTop = topPad + 40.dp
         val listCenterPad = ((h / 2) - listTop - itemHalf).coerceAtLeast(0.dp)
-        val listBottomPad = ((h / 2) - itemHalf).coerceAtLeast(0.dp)
+        // 末项不再额外留白(否则底部会有一大段"滑不完"的空白),只保证圆边安全
+        val listBottomPad = 6.dp
         CompositionLocalProvider(
             LocalRoundBottom provides bottomSafe,
             LocalListCenterPad provides listCenterPad,
@@ -210,7 +214,8 @@ private fun CurvedClock() {
 
 /**
  * 右侧小巧滚动进度条(仿 wear PositionIndicator):
- * 屏幕最右侧一小段细条,随滚动沿圆弧移动,停止滚动 1 秒后淡出。
+ * - 表冠/触屏只要列表在动就出现,停 900ms 后淡出(原来用 isScrollInProgress,表冠滑动不会触发)
+ * - 进度按"第几项 + 项内偏移"计算,变量高度列表也不会跳
  */
 @Composable
 private fun SmallScrollIndicator(state: LazyListState) {
@@ -218,38 +223,43 @@ private fun SmallScrollIndicator(state: LazyListState) {
     val barH = 26.dp
     val edge = 5.dp
     var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(state.isScrollInProgress) {
-        if (state.isScrollInProgress) {
-            visible = true
-        } else if (visible) {
-            kotlinx.coroutines.delay(1000)
-            visible = false
-        }
+    var activity by remember { mutableStateOf(0) }
+    // 监听列表布局变化(触屏拖动、表冠 dispatchRawDelta 都会改变 layoutInfo)
+    LaunchedEffect(state) {
+        snapshotFlow {
+            val i = state.layoutInfo.visibleItemsInfo.firstOrNull()
+            (i?.index ?: -1) to (i?.offset ?: 0)
+        }.collect { activity++ }
+    }
+    // 每次变化都重置计时:连续滚动时一直显示,停下 900ms 才淡出
+    LaunchedEffect(activity) {
+        if (activity == 0) return@LaunchedEffect
+        visible = true
+        kotlinx.coroutines.delay(900)
+        visible = false
     }
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        if (!visible) return@Canvas
         val info = state.layoutInfo
-        if (info.totalItemsCount == 0) return@Canvas
-        val perItem = (info.visibleItemsInfo.firstOrNull()?.size ?: 0).toFloat()
-        if (perItem <= 0f) return@Canvas
-        val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
-        val contentH = info.totalItemsCount * perItem
-        if (contentH <= viewport) return@Canvas
-        val scrolled = state.firstVisibleItemIndex * perItem + info.viewportStartOffset
-        val progress = (scrolled / (contentH - viewport)).coerceIn(0f, 1f)
+        val total = info.totalItemsCount
+        if (total <= 1) return@Canvas
+        val first = info.visibleItemsInfo.firstOrNull() ?: return@Canvas
+        val visibleCount = info.visibleItemsInfo.size.coerceAtLeast(1)
+        val scrollableCount = (total - visibleCount).coerceAtLeast(1)
+        val perItem = (first.size.coerceAtLeast(1)).toFloat()
+        val fraction = (info.viewportStartOffset - first.offset).toFloat() / perItem
+        val progress = ((first.index + fraction) / scrollableCount).coerceIn(0f, 1f)
 
         val r = size.minDimension / 2f - edge.toPx()
         val cx = size.width / 2f
         val cy = size.height / 2f
-        // 沿右侧圆弧:-42°(上) → +42°(下)
         val deg = -42f + 84f * progress
         val rad = Math.toRadians(deg.toDouble())
         val px = cx + r * kotlin.math.cos(rad).toFloat()
         val py = cy + r * kotlin.math.sin(rad).toFloat()
-        val alpha = if (visible) 0.85f else 0f
-        if (alpha <= 0f) return@Canvas
         rotate(degrees = deg, pivot = androidx.compose.ui.geometry.Offset(px, py)) {
             drawRoundRect(
-                color = Color.White.copy(alpha = alpha),
+                color = Color.White.copy(alpha = 0.85f),
                 topLeft = androidx.compose.ui.geometry.Offset(px - barW.toPx() / 2f, py - barH.toPx() / 2f),
                 size = androidx.compose.ui.geometry.Size(barW.toPx(), barH.toPx()),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(barW.toPx() / 2f),
@@ -341,17 +351,17 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
     var m = modifier
         .centerFocus()
         .fillMaxWidth()
-        .padding(vertical = 3.dp)
-        .clip(RoundedCornerShape(14.dp))
+        .padding(vertical = 4.dp)
+        .clip(RoundedCornerShape(16.dp))
         .background(c.surface)
-        .border(1.dp, c.border, RoundedCornerShape(14.dp))
-        .padding(horizontal = 14.dp, vertical = 10.dp)
+        .border(1.dp, c.border, RoundedCornerShape(16.dp))
+        .padding(horizontal = 16.dp, vertical = 14.dp)
     m = if (onLongClick != null) m.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick)
     else if (onClick != null) m.clickable { onClick() } else m
     Column(m) {
-        Text(title, color = c.text, fontSize = 14.sp)
-        if (value.isNotEmpty()) Text(value, color = c.hint, fontSize = 11.sp, lineHeight = 14.sp,
-            modifier = Modifier.padding(top = 2.dp))
+        Text(title, color = c.text, fontSize = 15.5.sp)
+        if (value.isNotEmpty()) Text(value, color = c.hint, fontSize = 12.sp, lineHeight = 15.sp,
+            modifier = Modifier.padding(top = 3.dp))
     }
 }
 
@@ -367,10 +377,10 @@ fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onCh
             .clip(RoundedCornerShape(14.dp))
             .background(c.surface)
             .border(1.dp, c.border, RoundedCornerShape(14.dp))
-            .padding(horizontal = 14.dp, vertical = 5.dp),
+            .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(title, color = c.text, fontSize = 14.5.sp, modifier = Modifier.weight(1f))
         SmallToggle(checked, onChange = onChange)
     }
 }
@@ -435,7 +445,7 @@ fun WInput(title: String, initial: String, password: Boolean = false, multiline:
         confirmText = okText, onConfirm = { onOk(v.text) }, dismissText = "取消") {
         androidx.compose.material3.OutlinedTextField(
             value = v,
-            onValueChange = { if (it.text.length <= 8000) v = it },
+            onValueChange = { v = it },
             singleLine = !multiline,
             modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
             visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,

@@ -57,12 +57,17 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
         if (ev.action == MotionEvent.ACTION_SCROLL) {
-            val raw = -ev.getAxisValue(MotionEvent.AXIS_VSCROLL)
-            if (kotlin.math.abs(raw) > 0.05f) {
+            // 官方语义:RotaryScrollEvent.verticalScrollPixels 已经是"像素",
+            // 一格(一个 detent)≈ 平台滚动因子(ViewConfiguration.scaledVerticalScrollFactor ≈ 64dp)。
+            // 旧实现每格只给 6~12dp,比官方小 8 倍,所以"转半天不动、转快了反而显得慢"。
+            val axis = ev.getAxisValue(MotionEvent.AXIS_SCROLL)
+            val raw = if (kotlin.math.abs(axis) > 0.01f) axis else -ev.getAxisValue(MotionEvent.AXIS_VSCROLL)
+            if (kotlin.math.abs(raw) > 0.01f) {
                 val sign = if (raw > 0) 1 else -1
-                val mag = kotlin.math.abs(raw).coerceIn(0f, 3f)
-                // 步长≈12~24:低频小步,高频事件多自然快;速度由事件频率主导
-                RotaryBus.emit(sign * (12 + (mag * 4f).toInt()).coerceAtMost(24))
+                val detents = kotlin.math.abs(raw).coerceIn(0.5f, 4f)
+                // 每格 ≈ 38dp(约半张卡片),多格事件按格数累加;快慢完全由转动格数决定
+                val stepPx = 38f * resources.displayMetrics.density
+                RotaryBus.emit((sign * stepPx * detents).toInt())
             }
             return true
         }

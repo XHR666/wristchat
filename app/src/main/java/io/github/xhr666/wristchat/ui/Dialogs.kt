@@ -102,7 +102,7 @@ fun WDialogHost(d: DialogController) {
             CompactDialog(title = s.title, onDismiss = { d.close() },
                 confirmText = s.ok, onConfirm = { d.close(); runCatching { s.onOk(v.text) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e}"); d.text("出错", e.message ?: "操作异常") } }, dismissText = "取消") {
                 androidx.compose.material3.OutlinedTextField(
-                    value = v, onValueChange = { if (it.text.length <= 8000) v = it },
+                    value = v, onValueChange = { v = it },   // 同上:不做任何拦截,避免 IME 组合区失步
                     singleLine = !s.multiline,
                     modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
                     visualTransformation = if (s.password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,

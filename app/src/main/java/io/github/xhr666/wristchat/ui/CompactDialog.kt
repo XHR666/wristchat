@@ -43,11 +43,12 @@ fun CompactDialog(
     val sw = cfg.screenWidthDp.toFloat()
     val sh = cfg.screenHeightDp.toFloat()
     val radius = minOf(sw, sh) / 2f
-    val rc = radius + 6.5f
-    val maxW = minOf(sw * 0.80f, 184f)
+    // 允许四角略微越出圆(约 11dp),22dp 圆角会把这部分藏进不可见区,视觉上不会被切
+    val rc = radius + 11f
+    val maxW = minOf(sw * 0.82f, 190f)
     val halfW = maxW / 2f
     val maxHByCircle = 2f * kotlin.math.sqrt((rc * rc - halfW * halfW).coerceAtLeast(1f))
-    val maxH = minOf(sh - 26f, 172f, maxHByCircle).dp
+    val maxH = minOf(sh - 20f, 170f, maxHByCircle).dp
     // 改用系统 Dialog 窗口承载:自绘全屏覆盖层在部分手表上不显示/被页面布局影响;
     // 系统窗口天然置顶、自带遮罩(点击外部关闭),不再需要自绘 mask。
     Dialog(
