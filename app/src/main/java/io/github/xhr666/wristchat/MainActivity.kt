@@ -15,6 +15,25 @@ class MainActivity : ComponentActivity() {
 
     private val settings by lazy { (application as WristChatApp).settings }
 
+    /** 每次"真正回到前台"递增 → 触发重新校验启动密码 */
+    private val foregroundEpoch = androidx.compose.runtime.mutableStateOf(0)
+    private var stoppedAt = 0L
+
+    override fun onStop() {
+        super.onStop()
+        stoppedAt = System.currentTimeMillis()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val away = if (stoppedAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - stoppedAt
+        // 配置变更(主题/缩放 recreate)与短时离开(选图片等)不重新上锁;退后台超过 30 秒则重新校验
+        if (!isChangingConfigurations && away > 30_000L) {
+            io.github.xhr666.wristchat.ui.LockGate.unlocked = false
+            foregroundEpoch.value += 1
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -27,7 +46,7 @@ class MainActivity : ComponentActivity() {
                 or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             )
         setContent {
-            WristAppRoot(settings)
+            WristAppRoot(settings, foregroundEpoch.value)
         }
     }
 

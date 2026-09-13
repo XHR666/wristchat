@@ -39,6 +39,7 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
         title = if (sessions.isEmpty()) "会话" else "会话(${sessions.size})",
         showTimeAlways = true,
         actions = {},
+        scrollIndicator = listState,
     ) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -47,18 +48,20 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
                     .weight(1f)
                     .padding(horizontal = 20.dp)
                     ,
-                contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = LocalRoundBottom.current),
             ) {
-                itemsIndexed(sessions) { _, s ->
-                    WCard(
-                        title = s.title.ifBlank { "新会话" },
-                        value = sub(s),
-                        onClick = {
-                            vm.setCurrentSession(s.id)
-                            onOpenChat()
-                        },
-                        onLongClick = { deleteTarget = s },
-                    )
+                itemsIndexed(sessions) { i, s ->
+                    Box(Modifier.scalingItem(listState, i)) {
+                        WCard(
+                            title = s.title.ifBlank { "新会话" },
+                            value = sub(s),
+                            onClick = {
+                                vm.setCurrentSession(s.id)
+                                onOpenChat()
+                            },
+                            onLongClick = { deleteTarget = s },
+                        )
+                    }
                 }
                 item { Spacer(Modifier.height(4.dp)) }
             }

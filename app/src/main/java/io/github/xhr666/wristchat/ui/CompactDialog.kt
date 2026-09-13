@@ -37,7 +37,9 @@ fun CompactDialog(
 ) {
     val c = LocalWrist.current
     val cfg = androidx.compose.ui.platform.LocalConfiguration.current
-    val maxH = (cfg.screenHeightDp - 16).dp
+    // 圆屏安全尺寸:整框宽高落在圆内(宽²+高² ≤ 4r²),否则左下/右下角会被圆弧切掉
+    val maxH = minOf(cfg.screenHeightDp - 32f, 158f).dp
+    val maxW = minOf(cfg.screenWidthDp * 0.72f, 166f).dp
     // 改用系统 Dialog 窗口承载:自绘全屏覆盖层在部分手表上不显示/被页面布局影响;
     // 系统窗口天然置顶、自带遮罩(点击外部关闭),不再需要自绘 mask。
     Dialog(
@@ -49,7 +51,7 @@ fun CompactDialog(
                 shape = RoundedCornerShape(22.dp),
                 color = c.surface,
                 shadowElevation = 0.dp,
-                modifier = Modifier.widthIn(min = 176.dp, max = 224.dp).heightIn(max = maxH),
+                modifier = Modifier.widthIn(min = 148.dp, max = maxW).heightIn(max = maxH),
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
@@ -59,7 +61,7 @@ fun CompactDialog(
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(max = (maxH - 100.dp)),
+                            .heightIn(max = (maxH - 96.dp).coerceAtLeast(28.dp)),
                     ) {
                         content()
                     }

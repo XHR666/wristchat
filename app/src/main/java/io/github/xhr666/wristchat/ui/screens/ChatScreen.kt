@@ -69,9 +69,11 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
         return
     }
 
+    settings.rev   // 订阅设置变化(模型名等)
     ScreenScaffold(
         title = title.ifBlank { settings.model }.let { if (it == "新会话") settings.model else it },
         showTimeAlways = true,
+        scrollIndicator = listState,
         actions = {
             SmallAction("ⓘ") { showDetails = true }
             SmallAction("⌨") { quickPanel = !quickPanel }
@@ -100,9 +102,9 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 10.dp),
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = LocalRoundBottom.current),
             ) {
-                itemsIndexed(messages) { i, m -> MessageItem(m, markwon) }
+                itemsIndexed(messages, key = { i, m -> "$i-${m.ts}" }) { _, m -> MessageItem(m, markwon) }
                 if (sending) item { Text("思考中…", color = c.hint, fontSize = 12.sp) }
             }
             Row(
@@ -248,7 +250,8 @@ private fun Color.toArgbCompat(): Int = android.graphics.Color.argb(
 fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val c = LocalWrist.current
-    var text by remember { mutableStateOf(vm.draft.value ?: "") }
+    // TextFieldValue:输入法组合区与文本状态同步(修删除后 IME 预览不刷新)
+    var tv by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(vm.draft.value ?: "")) }
     var attachName by remember { mutableStateOf<String?>(null) }
     var attachThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var visionAsk by remember { mutableStateOf(false) }
@@ -278,7 +281,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
                 val thumb = name?.let { io.github.xhr666.wristchat.data.Attachments.loadThumb(ctx, it) }
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     if (name == null) hint = "图片读取失败或不支持的格式"
-                    else { attachName = name; attachThumb = thumb; text = "" }
+                    else { attachName = name; attachThumb = thumb; tv = androidx.compose.ui.text.input.TextFieldValue("") }
                 }
             }
         }
@@ -299,13 +302,13 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
             .padding(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SmallAction("‹") { vm.setDraft(text); keyboard?.hide(); onClose() }
+            SmallAction("‹") { vm.setDraft(tv.text); keyboard?.hide(); onClose() }
             Text(if (attachName != null) "发送图片" else "输入消息", color = c.text, fontSize = 14.sp,
                 modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             SmallAction("🖼") { launchPicker() }
             SmallAction("➤") {
-                vm.setDraft(text)
-                vm.send(text, attachName)
+                vm.setDraft(tv.text)
+                vm.send(tv.text, attachName)
                 keyboard?.hide()
                 onClose()
             }
@@ -326,7 +329,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         }
         hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp)) }
         TextField(
-            value = text, onValueChange = { if (it.length <= 8000) text = it },
+            value = tv, onValueChange = { if (it.text.length <= 8000) tv = it },
             modifier = Modifier
                 .fillMaxSize()
                 .focusRequester(focusRequester),

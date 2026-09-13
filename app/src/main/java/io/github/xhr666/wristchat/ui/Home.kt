@@ -1,6 +1,7 @@
 package io.github.xhr666.wristchat.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -9,6 +10,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import io.github.xhr666.wristchat.WristChatApp
@@ -22,11 +24,8 @@ object LockGate {
     var unlocked: Boolean = false
 }
 
-/** 进程级标记:本次进程启动已扣过一次免密次数(主题切换等 recreate 不再重复扣) */
-private var graceApplied = false
-
 @Composable
-fun WristAppRoot(settings: SettingsStore) {
+fun WristAppRoot(settings: SettingsStore, foregroundEpoch: Int = 0) {
     val palette = when (settings.theme) { "light" -> Light; "dark" -> Dark; else -> Amoled }
     val scheme = if (settings.theme == "light")
         lightColorScheme(primary = palette.accent, background = palette.bg, surface = palette.surface)
@@ -34,7 +33,8 @@ fun WristAppRoot(settings: SettingsStore) {
 
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(LocalWrist provides palette) {
-            var locked by remember { mutableStateOf(needLock(settings)) }
+            // 每次真正回到前台重新判定(免密次数按"进入次数"扣)
+            var locked by remember(foregroundEpoch) { mutableStateOf(needLock(settings)) }
             if (locked) {
                 LockScreen(settings) { locked = false }
             } else {
@@ -48,8 +48,8 @@ private fun needLock(s: SettingsStore): Boolean {
     if (!s.passwordEnabled) return false
     if (LockGate.unlocked) return false
     if (s.graceLeft > 0) {
-        // 免密次数只在真正的进程启动时扣一次;recreate(主题/缩放切换)不重复扣
-        if (!graceApplied) { s.graceLeft -= 1; graceApplied = true }
+        // 免密次数按"回到前台"的次数扣(次数用完即要求输密码)
+        s.graceLeft -= 1
         return false
     }
     return true
@@ -75,12 +75,27 @@ fun HomePager(settings: SettingsStore) {
             if (currentPage > 0) scope.launch { pagerState.animateScrollToPage(currentPage - 1) }
         },
     ) {
-        HorizontalPager(state = pagerState, userScrollEnabled = !PagerLock.locked, modifier = Modifier.fillMaxSize()) { page ->
-            when (page) {
-                0 -> SessionsScreen(settings, chatVm, onOpenChat = { scope.launch { pagerState.animateScrollToPage(1) } })
-                1 -> ChatScreen(settings, chatVm)
-                2 -> BalanceScreen(settings)
-                else -> SettingsMenuScreen(settings)
+        HorizontalPager(
+            state = pagerState,
+            userScrollEnabled = !PagerLock.locked,
+            modifier = Modifier.fillMaxSize(),
+        ) { page ->
+            // 页面切换焦点效果:居中的整页放大,向两侧滑出时逐渐缩小淡出
+            // graphicsLayer 块内读取滚动状态 = 绘制阶段读取,不触发逐帧重组
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                val off = kotlin.math.abs((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                val f = off.coerceIn(0f, 1f)
+                val sc = 1f - 0.12f * f
+                scaleX = sc
+                scaleY = sc
+                alpha = 1f - 0.35f * f
+            }) {
+                when (page) {
+                    0 -> SessionsScreen(settings, chatVm, onOpenChat = { scope.launch { pagerState.animateScrollToPage(1) } })
+                    1 -> ChatScreen(settings, chatVm)
+                    2 -> BalanceScreen(settings)
+                    else -> SettingsMenuScreen(settings)
+                }
             }
         }
     }

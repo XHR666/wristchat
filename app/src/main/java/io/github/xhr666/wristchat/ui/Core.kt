@@ -23,7 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -32,6 +34,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
@@ -55,20 +58,49 @@ object PagerLock {
 }
 
 object RotaryBus {
-    // 无收集器(如锁定/翻页中)时事件直接丢弃,避免解锁后积压事件一次性注入导致列表跳飞
-    val flow = MutableSharedFlow<Int>(extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    // 累积式:表冠快速旋转时事件非常密集,原实现用 SharedFlow 缓冲(16)溢出即丢事件,
+    // 于是"转得快反而走得慢"。改为累加 + 每帧消费一次,快转不丢步。
+    private val acc = java.util.concurrent.atomic.AtomicInteger(0)
+    private const val LIMIT = 320
     fun emit(delta: Int) {
-        if (flow.subscriptionCount.value > 0) flow.tryEmit(delta.coerceIn(-32, 32))
+        val v = acc.addAndGet(delta)
+        if (v > LIMIT) acc.set(LIMIT) else if (v < -LIMIT) acc.set(-LIMIT)
     }
+    fun drain(): Int = acc.getAndSet(0)
 }
 
 @Composable
 fun RotaryList(listState: LazyListState, enabled: Boolean) {
     LaunchedEffect(enabled) {
         if (!enabled) return@LaunchedEffect
-        RotaryBus.flow.collectLatest { listState.dispatchRawDelta(it.toFloat()) }
+        while (true) {
+            withFrameNanos { }                       // 每帧把累积的旋转量一次性消费
+            val d = RotaryBus.drain()
+            if (d != 0) listState.dispatchRawDelta(d.toFloat())
+        }
     }
 }
+
+/**
+ * 列表项"焦点缩放":越靠近列表中心的项越大,越靠上下边缘越小并淡出
+ * (对应 Wear 设计里的 ScalingLazyColumn 效果)。读取在绘制阶段,不产生逐帧重组。
+ */
+fun Modifier.scalingItem(state: LazyListState, index: Int, maxShrink: Float = 0.16f): Modifier = this.graphicsLayer {
+    val info = state.layoutInfo
+    val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return@graphicsLayer
+    val vpStart = info.viewportStartOffset
+    val vpEnd = info.viewportEndOffset
+    val half = ((vpEnd - vpStart) / 2f).coerceAtLeast(1f)
+    val center = item.offset + item.size / 2f
+    val d = (kotlin.math.abs(center - (vpStart + vpEnd) / 2f) / half).coerceIn(0f, 1f)
+    val sc = 1f - maxShrink * d
+    scaleX = sc
+    scaleY = sc
+    alpha = 1f - 0.40f * d
+}
+
+/** 圆形屏底部安全内边距:列表最后一项用它做 contentPadding.bottom,防止被圆边切掉 */
+val LocalRoundBottom = staticCompositionLocalOf { 26.dp }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -78,11 +110,16 @@ fun ScreenScaffold(
     showTimeAtTop: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
     onHeaderSwipeBack: (() -> Unit)? = null,
+    scrollIndicator: LazyListState? = null,
     content: @Composable () -> Unit,
 ) {
     val c = LocalWrist.current
     BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
         val w = maxWidth; val h = maxHeight
+        // 底部圆边内缩量:越靠底部,可视宽度越窄 → 给内容列表留出安全边距
+        val bottomSafe = roundInset(w, h, h - 4.dp) + 12.dp
+        CompositionLocalProvider(LocalRoundBottom provides bottomSafe) {
+        Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(top = 12.dp)) {
             val inset = roundInset(w, h, 12.dp + 20.dp)
             var swipeAcc by remember { mutableStateOf(0f) }
@@ -110,6 +147,93 @@ fun ScreenScaffold(
             }
             content()
         }
+        // 圆表侧边弧形滚动进度(wear PositionIndicator 风格):贴右圆弧显示进度
+        if (scrollIndicator != null) ArcScrollIndicator(scrollIndicator)
+        }
+        }
+    }
+}
+
+/** 贴右圆弧的滚动进度指示(读数在绘制阶段,滚动不触发重组) */
+@Composable
+private fun ArcScrollIndicator(state: LazyListState) {
+    val strokePx = with(LocalDensity.current) { 3.dp.toPx() }
+    val padPx = with(LocalDensity.current) { 7.dp.toPx() }
+    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        val info = state.layoutInfo
+        if (info.totalItemsCount == 0) return@Canvas
+        val perItem = (info.visibleItemsInfo.firstOrNull()?.size ?: 0).toFloat()
+        if (perItem <= 0f) return@Canvas
+        val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+        val contentH = info.totalItemsCount * perItem
+        if (contentH <= viewport) return@Canvas
+        val scrolled = state.firstVisibleItemIndex * perItem + info.viewportStartOffset
+        val progress = (scrolled / (contentH - viewport)).coerceIn(0f, 1f)
+        val radius = size.minDimension / 2f - padPx
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val start = -62f
+        val sweep = 124f
+        val topLeft = androidx.compose.ui.geometry.Offset(cx - radius, cy - radius)
+        val arcSize = androidx.compose.ui.geometry.Size(radius * 2, radius * 2)
+        drawArc(color = Color.White.copy(alpha = 0.10f), startAngle = start, sweepAngle = sweep,
+            useCenter = false, topLeft = topLeft, size = arcSize,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokePx, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        drawArc(color = Color.White.copy(alpha = 0.75f), startAngle = start, sweepAngle = sweep * progress,
+            useCenter = false, topLeft = topLeft, size = arcSize,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokePx, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        val a = Math.toRadians((start + sweep * progress).toDouble())
+        drawCircle(color = Color.White, radius = strokePx * 1.15f,
+            center = androidx.compose.ui.geometry.Offset(cx + radius * kotlin.math.cos(a).toFloat(),
+                cy + radius * kotlin.math.sin(a).toFloat()))
+    }
+}
+
+/**
+ * 跟手可打断的右滑返回容器:手指拖动时内容实时跟手位移,
+ * 松手超过阈值就完成返回,否则回弹;过程中随时可反向拖回(interruptible)。
+ */
+@Composable
+fun SwipeBackContainer(onBack: () -> Unit, content: @Composable () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val offset = remember { androidx.compose.animation.core.Animatable(0f) }
+    var widthPx by remember { mutableStateOf(1f) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, drag ->
+                        scope.launch { offset.snapTo((offset.value + drag).coerceIn(0f, widthPx)) }
+                    },
+                    onDragEnd = {
+                        val w = widthPx
+                        scope.launch {
+                            if (offset.value > w * 0.26f) {
+                                offset.animateTo(w, androidx.compose.animation.core.tween(150))
+                                offset.snapTo(0f)
+                                onBack()
+                            } else {
+                                offset.animateTo(0f, androidx.compose.animation.core.spring(
+                                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow))
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        scope.launch { offset.animateTo(0f, androidx.compose.animation.core.spring(
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)) }
+                    },
+                )
+            },
+    ) {
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            val p = (offset.value / widthPx).coerceIn(0f, 1f)
+            translationX = offset.value * 0.55f
+            scaleX = 1f - 0.05f * p
+            scaleY = 1f - 0.05f * p
+            alpha = 1f - 0.22f * p
+        }) { content() }
     }
 }
 
@@ -164,8 +288,7 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
 @Composable
 fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     val c = LocalWrist.current
-    var on by remember { mutableStateOf(checked) }
-    LaunchedEffect(checked) { on = checked }   // 外部状态变化(如同步)时刷新开关
+    // 不再保存内部状态:取消设置时开关立即回到真实状态
     Row(
         modifier
             .fillMaxWidth()
@@ -177,7 +300,7 @@ fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onCh
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, color = c.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        SmallToggle(on, onChange = { v -> on = v; onChange(v) })
+        SmallToggle(checked, onChange = onChange)
     }
 }
 
@@ -236,12 +359,12 @@ fun WChoice(title: String, items: List<String>, checked: Int, onPick: (Int) -> U
 @Composable
 fun WInput(title: String, initial: String, password: Boolean = false, multiline: Boolean = false,
            okText: String = "保存", onOk: (String) -> Unit, onCancel: () -> Unit = {}) {
-    var v by remember(initial, title) { mutableStateOf(initial) }
+    var v by remember(initial, title) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial)) }
     CompactDialog(title = title, onDismiss = onCancel,
-        confirmText = okText, onConfirm = { onOk(v) }, dismissText = "取消") {
+        confirmText = okText, onConfirm = { onOk(v.text) }, dismissText = "取消") {
         androidx.compose.material3.OutlinedTextField(
             value = v,
-            onValueChange = { if (it.length <= 8000) v = it },
+            onValueChange = { if (it.text.length <= 8000) v = it },
             singleLine = !multiline,
             modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
             visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,

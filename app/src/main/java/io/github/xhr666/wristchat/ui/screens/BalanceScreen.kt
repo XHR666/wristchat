@@ -36,11 +36,13 @@ fun BalanceScreen(settings: SettingsStore) {
         if (page == 2) vm.refresh()
     }
 
-    ScreenScaffold(title = "余额", actions = { SmallAction("⟳") { vm.refresh() } }) {
+    settings.rev   // 订阅设置变化,服务商/模型切换后立即刷新本页文案
+    ScreenScaffold(title = "余额", actions = { SmallAction("⟳") { vm.refresh() } },
+        scrollIndicator = listState) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 8.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 8.dp, bottom = LocalRoundBottom.current),
         ) {
             item {
                 Text(ui?.peakLabel ?: "", color = c.text, fontSize = 12.sp, lineHeight = 16.sp,

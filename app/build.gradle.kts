@@ -15,8 +15,8 @@ android {
         applicationId = "io.github.xhr666.wristchat"
         minSdk = 30
         targetSdk = 34
-        versionCode = 23
-        versionName = "0.4.5"
+        versionCode = 24
+        versionName = "0.5.0"
     }
 
     signingConfigs {

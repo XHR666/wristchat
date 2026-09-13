@@ -96,11 +96,13 @@ fun WDialogHost(d: DialogController) {
         }
         is WSpec.Input -> {
             // remember 以 spec 为 key:编辑 A 后再编辑 B 时输入框内容必须从 B 的 initial 重新开始
-            var v by remember(s) { mutableStateOf(s.initial) }
+            // 用 TextFieldValue 承载:输入法组合区(候选/预览)与文本状态完全同步,
+            // 之前用 String 时删除字符后 IME 预览不刷新。
+            var v by remember(s) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(s.initial)) }
             CompactDialog(title = s.title, onDismiss = { d.close() },
-                confirmText = s.ok, onConfirm = { d.close(); runCatching { s.onOk(v) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e}"); d.text("出错", e.message ?: "操作异常") } }, dismissText = "取消") {
+                confirmText = s.ok, onConfirm = { d.close(); runCatching { s.onOk(v.text) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e}"); d.text("出错", e.message ?: "操作异常") } }, dismissText = "取消") {
                 androidx.compose.material3.OutlinedTextField(
-                    value = v, onValueChange = { if (it.length <= 8000) v = it },
+                    value = v, onValueChange = { if (it.text.length <= 8000) v = it },
                     singleLine = !s.multiline,
                     modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
                     visualTransformation = if (s.password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,

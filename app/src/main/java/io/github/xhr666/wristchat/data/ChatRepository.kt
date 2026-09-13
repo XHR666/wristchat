@@ -92,7 +92,15 @@ class ChatRepository(
         val sysParts = mutableListOf<String>()
         settings.customPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
         SkillStoreProvider.skillsPrompt?.takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
-        if (enableMemory) memory.buildMemoriesTag().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
+        if (enableMemory) {
+            memory.buildMemoriesTag().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
+            // 显式指示模型使用记忆工具,否则它往往"看到工具但不调用"
+            sysParts.add(
+                "长期记忆规则:当用户表达需要长期记住的信息(如\"记住…\"\"以后都…\"\"我喜欢/我不喜欢…\"、称呼、偏好、计划)时," +
+                "必须调用 memory_tool(action=create) 保存;需要修正时先看 <memories> 中已有 id 再 action=edit;过期内容 action=delete。" +
+                "不要为一次性、临时内容调用;不要在回复里复述工具调用过程。"
+            )
+        }
         val systemContent = sysParts.joinToString("\n\n")
 
         val messages = JSONArray()
@@ -170,6 +178,7 @@ class ChatRepository(
                 val id = tc.optString("id")
                 if (name == "memory_tool") {
                     val result = executeMemoryTool(args, ops)
+                    runCatching { AppLog.i("mem", "$args -> $result") }
                     toolResults.put(JSONObject().apply {
                         put("role", "tool")
                         put("tool_call_id", id)
@@ -206,8 +215,11 @@ class ChatRepository(
                     reasoningTokens = usage2Raw?.optJSONObject("completion_tokens_details")?.optInt("reasoning_tokens") ?: 0,
                 )
                 val cost2 = Pricing.cost(model, now, usage2.cacheHit.toLong(), usage2.cacheMiss.toLong(), usage2.completionTokens.toLong())
+                val finalText = msg2.optString("content").ifBlank {
+                    if (ops.isNotEmpty()) "✓ 已${if (ops.any { it.action == "delete" }) "删除" else "保存"} ${ops.size} 条记忆" else ""
+                }
                 return ChatResult.Success(
-                    content = msg2.optString("content"),
+                    content = finalText,
                     reasoning = msg2.optString("reasoning_content"),
                     usage = usage2,
                     cost = cost2,

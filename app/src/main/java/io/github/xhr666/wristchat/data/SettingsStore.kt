@@ -10,6 +10,19 @@ class SettingsStore(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("wristchat_settings", Context.MODE_PRIVATE)
 
+    /**
+     * 设置版本号:任何一次写入(含后台写入)都会 +1。
+     * 界面读取 [rev] 即可在设置变化后立即重组 —— 修复"切换服务商后要过一会儿才更新"的问题。
+     */
+    private val revState = androidx.compose.runtime.mutableStateOf(0)
+    val rev: Int get() = revState.value
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener { _, _ ->
+            try { revState.value += 1 } catch (_: Throwable) {}
+        }
+    }
+
     // ---- Provider / Key ----
     var providerId: String
         get() = prefs.getString(KEY_PROVIDER, PROVIDER_DEEPSEEK) ?: PROVIDER_DEEPSEEK

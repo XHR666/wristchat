@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -60,15 +61,17 @@ fun SettingsMenuScreen(settings: SettingsStore) {
         return
     }
 
-    ScreenScaffold(title = "设置", showTimeAlways = true) {
+    ScreenScaffold(title = "设置", showTimeAlways = true, scrollIndicator = listState) {
         Column(Modifier.fillMaxSize()) {
             if (warn) Text("会话已达上限,建议清理", color = Color(0xFFFFD9A0), fontSize = 12.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().background(Color(0xFF3D2E14)).padding(6.dp))
             LazyColumn(state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)) {
-                items(CATS) { cat -> WCard(cat.title, cat.desc) { openCat = cat.key } }
+                contentPadding = PaddingValues(top = 4.dp, bottom = LocalRoundBottom.current)) {
+                itemsIndexed(CATS) { i, cat ->
+                    Box(Modifier.scalingItem(listState, i)) { WCard(cat.title, cat.desc) { openCat = cat.key } }
+                }
             }
         }
         RotaryList(listState, enabled = LocalCurrentPage.current == 3)
@@ -107,11 +110,14 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
         return
     }
 
+    settings.rev   // 订阅设置变化:服务商/Key/地址等改完立即反映到界面
+    SwipeBackContainer(onBack = onBack) {
     ScreenScaffold(title = CAT_TITLE[cat] ?: "设置",
         actions = { SmallAction("‹") { onBack() } },
-        onHeaderSwipeBack = onBack) {
+        onHeaderSwipeBack = onBack,
+        scrollIndicator = listState) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 14.dp)) {
+                contentPadding = PaddingValues(top = 4.dp, bottom = LocalRoundBottom.current)) {
                 when (cat) {
                     "service" -> serviceRows(settings, dialogs)
                     "model" -> modelRows(settings, dialogs)
@@ -126,6 +132,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
             }
             RotaryList(listState, enabled = LocalCurrentPage.current == 3)
         }
+    }
         WDialogHost(dialogs)
 }
 
@@ -269,7 +276,7 @@ private fun LazyListScope.storageRows(s: SettingsStore, vm: SettingsViewModel, d
     item { WCard("缓存详情", vm.cacheInfo.value ?: "") { vm.refreshSizes() } }
     // 文件删除移出主线程,避免 ANR(H10)
     item { val scope = rememberCoroutineScope()
-        WCard("清理缓存(安全)", "WebView/临时文件") {
+        WCard("清理缓存(安全)", "只清 WebView/临时文件;保留日志与更新包") {
             d.confirm("清理缓存", "删除 WebView 缓存与临时文件,不影响数据") {
                 scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                     val freed = vm.clearCache()
@@ -366,7 +373,7 @@ private fun LazyListScope.securityRows(s: SettingsStore, d: DialogController) {
             } else d.text("提示", "需为 4 位数字")
         } else d.confirm("关闭密码", "关闭后启动不再需要密码", ok = "关闭") { s.passwordEnabled = false }
     } }
-    item { WCard("免密次数", s.graceDefault.toString()) { d.num("未来 N 次免密(0=每次都输)", s.graceDefault.toFloat(), 0f, 50f) { s.graceDefault = it.toInt() } } }
+    item { WCard("免密次数", s.graceDefault.toString()) { d.num("未来 N 次免密(0=每次都输)", s.graceDefault.toFloat(), 0f, 50f) { s.graceDefault = it.toInt(); s.graceLeft = it.toInt() } } }
     item {
         val act = LocalContext.current as? android.app.Activity
         WCard("主题", themeName(s.theme)) {

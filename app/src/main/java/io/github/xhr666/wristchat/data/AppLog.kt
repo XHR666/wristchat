@@ -22,6 +22,6 @@ object AppLog {
     fun read(): String {
         val c = ctx ?: return "(未初始化)"
         val f = File(c.filesDir, "app.log")
-        return if (f.exists()) f.readText().takeLast(4000).ifBlank { "(空)" } else "(无日志)"
+        return if (f.exists()) f.readText().takeLast(20_000).ifBlank { "(空)" } else "(无日志)"
     }
 }

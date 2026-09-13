@@ -27,26 +27,55 @@ fun LogViewerScreen(title: String, load: suspend () -> String, onBack: () -> Uni
         text = withContext(Dispatchers.IO) { load() }
     }
 
+    SwipeBackContainer(onBack = onBack) {
     ScreenScaffold(title = title,
         actions = { SmallAction("‹") { onBack() } },
-        onHeaderSwipeBack = onBack) {
+        onHeaderSwipeBack = onBack,
+        scrollIndicator = listState) {
         val t = text
         when {
             t == null -> Text("读取中…", color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
             t.isBlank() -> Text("(空)", color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
-            ) {
-                // 分行渲染:只取最近 600 行,并倒序 —— 最新的在最上面,不用往下翻
-                val lines = t.lines().takeLast(600).reversed()
-                items(lines.size) { i ->
-                    Text(lines[i].ifBlank { " " }, color = c.text, fontSize = 11.sp,
-                        lineHeight = 14.sp, modifier = Modifier.padding(vertical = 1.dp))
+            else -> {
+                // 按 "=== ..." 头切分条目(ANR/崩溃一次一条),整条为单位、最新的条目排最上面
+                val entries = remember(t) { splitLogEntries(t) }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = LocalRoundBottom.current),
+                ) {
+                    items(entries.size) { i ->
+                        val e = entries[i]
+                        Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                            Text(e.first(), color = c.accent, fontSize = 11.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                lineHeight = 14.sp)
+                            e.drop(1).take(60).forEach { line ->
+                                Text(line.ifBlank { " " }, color = c.text, fontSize = 11.sp, lineHeight = 14.sp)
+                            }
+                            if (e.size > 61) Text("…(本条还有 ${e.size - 61} 行)", color = c.hint, fontSize = 10.sp)
+                        }
+                    }
                 }
             }
         }
         RotaryList(listState, enabled = LocalCurrentPage.current == 3)
     }
+    }
+}
+
+/** 把日志切成"条目":以 === 开头的行为一条的标题;没有 === 的按行处理。最新的排最前。 */
+private fun splitLogEntries(text: String): List<List<String>> {
+    val raw = text.lines()
+    val entries = mutableListOf<MutableList<String>>()
+    var cur: MutableList<String>? = null
+    for (line in raw) {
+        if (line.startsWith("===")) {
+            cur = mutableListOf(line)
+            entries.add(cur)
+        } else {
+            if (cur == null) { cur = mutableListOf(line); entries.add(cur) } else cur.add(line)
+        }
+    }
+    return entries.takeLast(80).reversed()
 }

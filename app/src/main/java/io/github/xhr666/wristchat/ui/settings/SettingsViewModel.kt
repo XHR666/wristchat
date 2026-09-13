@@ -72,6 +72,9 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCache(): Long {
         val app = getApplication<Application>()
         var freed = 0L
+        // 只清 WebView/临时缓存:绝不碰
+        //   filesDir  → 日志(crash/anr/app)、会话、记忆、技能、图片附件
+        //   cacheDir/updates → 已下载的更新安装包
         listOf(File(app.cacheDir, "WebView"), File(app.cacheDir, "http_cache"), File(app.cacheDir, "katex_tmp"))
             .forEach { d -> if (d.exists()) { freed += d.walkTopDown().filter { it.isFile }.sumOf { it.length() }; d.deleteRecursively() } }
         refreshSizes()
