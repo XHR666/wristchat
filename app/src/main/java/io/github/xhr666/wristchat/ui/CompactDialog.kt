@@ -38,9 +38,16 @@ fun CompactDialog(
 ) {
     val c = LocalWrist.current
     val cfg = androidx.compose.ui.platform.LocalConfiguration.current
-    // 圆屏安全尺寸:整框宽高落在圆内(宽²+高² ≤ 4r²),否则左下/右下角会被圆弧切掉
-    val maxH = minOf(cfg.screenHeightDp - 32f, 158f).dp
-    val maxW = minOf(cfg.screenWidthDp * 0.72f, 166f).dp
+    // 圆屏安全尺寸:矩形中心在屏幕中心时,四角必须落在圆内。
+    // 22dp 圆角会让"可见角"向内缩约 6.5dp,所以用 rc = r + 6.5 做补偿,可以在不被切的前提下把弹窗做大。
+    val sw = cfg.screenWidthDp.toFloat()
+    val sh = cfg.screenHeightDp.toFloat()
+    val radius = minOf(sw, sh) / 2f
+    val rc = radius + 6.5f
+    val maxW = minOf(sw * 0.80f, 184f)
+    val halfW = maxW / 2f
+    val maxHByCircle = 2f * kotlin.math.sqrt((rc * rc - halfW * halfW).coerceAtLeast(1f))
+    val maxH = minOf(sh - 26f, 172f, maxHByCircle).dp
     // 改用系统 Dialog 窗口承载:自绘全屏覆盖层在部分手表上不显示/被页面布局影响;
     // 系统窗口天然置顶、自带遮罩(点击外部关闭),不再需要自绘 mask。
     Dialog(
@@ -52,7 +59,7 @@ fun CompactDialog(
                 shape = RoundedCornerShape(22.dp),
                 color = c.surface,
                 shadowElevation = 0.dp,
-                modifier = Modifier.widthIn(min = 148.dp, max = maxW).heightIn(max = maxH),
+                modifier = Modifier.widthIn(min = 150.dp, max = maxW.dp).heightIn(max = maxH),
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Text(title, color = c.text, fontSize = 15.sp, fontWeight = FontWeight.Bold,
@@ -67,7 +74,8 @@ fun CompactDialog(
                         content()
                     }
                     if (confirmText != null || dismissText != null) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        Box(Modifier.fillMaxWidth().padding(top = 2.dp), contentAlignment = Alignment.Center) {
+                        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                             if (dismissText != null) {
                                 TextButton(onClick = onDismissButton ?: onDismiss) { Text(dismissText, color = c.hint, fontSize = 13.sp) }
                             }
@@ -76,6 +84,7 @@ fun CompactDialog(
                                     Text(confirmText, color = if (confirmEnabled) c.accent else c.hint, fontSize = 13.sp)
                                 }
                             }
+                        }
                         }
                     }
                 }

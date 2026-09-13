@@ -72,8 +72,8 @@ fun SettingsMenuScreen(settings: SettingsStore) {
                         top = LocalListCenterPad.current,
                         bottom = LocalListBottomPad.current + LocalRoundBottom.current),
                 ) {
-                    itemsIndexed(CATS) { i, cat ->
-                        Box(Modifier.scalingItem(listState, i)) { WCard(cat.title, cat.desc) { openCat = cat.key } }
+                    itemsIndexed(CATS) { _, cat ->
+                        WCard(cat.title, cat.desc) { openCat = cat.key }
                     }
                 }
             }
@@ -313,13 +313,17 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
         var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
         var pendingApk by remember { mutableStateOf<java.io.File?>(null) }  // 等授权后自动继续安装
         var resultTitle by remember { mutableStateOf("更新") }
+        var progLabel by remember { mutableStateOf<String?>(null) }          // 非空=自定义进度文案(安装中)
+        var cachedKey by remember { mutableStateOf(0) }                      // 下载完成后刷新"已下载包"卡片
 
         fun startInstall(file: java.io.File) {
+            progLabel = "正在提交安装…"
             prog = -1
             job = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val out = doInstall(ctx, file)
+                // 任何异常都要落地成结果,避免"卡在安装中没反应"
+                val out = try { doInstall(ctx, file) } catch (e: Exception) { InstallOutcome.Failed(e.message ?: "安装异常") }
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    prog = null
+                    prog = null; progLabel = null
                     when (out) {
                         is InstallOutcome.Done -> d.text(resultTitle, out.text)
                         is InstallOutcome.Failed -> d.text("安装失败", out.text)
@@ -333,6 +337,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
         }
 
         fun showOutcome(out: InstallOutcome) {
+            cachedKey++   // 下载/安装结束后刷新"已下载的包"卡片
             when (out) {
                 is InstallOutcome.Done -> d.text(resultTitle, out.text)
                 is InstallOutcome.Failed -> d.text("更新失败", out.text)
@@ -343,7 +348,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
                         try {
                             ctx.startActivity(android.content.Intent(
                                 android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                android.net.Uri.parse("package:${'$'}{ctx.packageName}")))
+                                android.net.Uri.parse("package:${ctx.packageName}")))
                         } catch (e: Exception) { d.text("打不开设置", e.message ?: "") }
                     }
                 }
@@ -365,7 +370,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
 
         WCard("检查更新", "") {
             val repo = UpdateRepository(s)
-            io.github.xhr666.wristchat.data.AppLog.i("upd", "check start v=${'$'}{s.versionName}")
+            io.github.xhr666.wristchat.data.AppLog.i("upd", "check start v=${s.versionName}")
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val r = repo.check()
@@ -374,9 +379,9 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         when (r) {
                             is UpdateResult.Found -> {
-                                resultTitle = "更新 ${'$'}{r.info.tagName}"
-                                d.confirm("发现新版本 ${'$'}{r.info.tagName}",
-                                    "当前:${'$'}{s.versionName} → ${'$'}{r.info.tagName}\n${'$'}{shortNote(r.info.body)}",
+                                resultTitle = "更新 ${r.info.tagName}"
+                                d.confirm("发现新版本 ${r.info.tagName}",
+                                    "当前:${s.versionName} → ${r.info.tagName}\n${shortNote(r.info.body)}",
                                     ok = "下载更新") {
                                     io.github.xhr666.wristchat.data.AppLog.i("upd", "user taps download")
                                     prog = -1
@@ -399,7 +404,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
                                             }
                                             throw e
                                         } catch (e: Exception) {
-                                            io.github.xhr666.wristchat.data.AppLog.i("upd", "err ${'$'}e")
+                                            io.github.xhr666.wristchat.data.AppLog.i("upd", "err $e")
                                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                                 prog = null; d.text("更新失败", e.message ?: "未知错误")
                                             }
@@ -407,13 +412,13 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
                                     }
                                 }
                             }
-                            is UpdateResult.UpToDate -> d.text("更新", "已是最新(${'$'}{r.latest})")
-                            is UpdateResult.NoApk -> d.text("更新", "发现 ${'$'}{r.latest},但无 APK 资产")
+                            is UpdateResult.UpToDate -> d.text("更新", "已是最新(${r.latest})")
+                            is UpdateResult.NoApk -> d.text("更新", "发现 ${r.latest},但无 APK 资产")
                             is UpdateResult.Error -> d.text("更新失败", r.message)
                         }
                     }
                 } catch (e: Exception) {
-                    io.github.xhr666.wristchat.data.AppLog.i("upd", "check err ${'$'}e")
+                    io.github.xhr666.wristchat.data.AppLog.i("upd", "check err $e")
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         d.text("更新失败", e.message ?: "未知错误")
                     }
@@ -423,50 +428,26 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
         // 下载进度:统一样式弹窗;只有“取消”能取消(点外部不误取消)
         prog?.let { p ->
             CompactDialog(
-                title = "下载更新",
+                title = if (progLabel != null) "安装更新" else "下载更新",
                 onDismiss = {},
                 dismissText = "取消",
                 onDismissButton = { job?.cancel() },
             ) {
-                Text(if (p < 0) "连接中…" else "下载中 $p%", color = LocalWrist.current.text, fontSize = 13.sp)
+                Text(progLabel ?: (if (p < 0) "连接中…" else "下载中 $p%"),
+                    color = LocalWrist.current.text, fontSize = 13.sp)
             }
         }
-    }
-    item {
-        val ctx = LocalContext.current
-        val scope = rememberCoroutineScope()
-        var prog by remember { mutableStateOf(false) }
-        // 已下载但上次没装上的包:补救入口
-        val cached = remember {
+        // 已下载但没装上的包:补救入口(与上面共用安装/授权逻辑)
+        val cachedApk = remember(cachedKey) {
             java.io.File(ctx.cacheDir, "updates").listFiles()
                 ?.filter { it.isFile && it.name.endsWith(".apk") }
                 ?.maxByOrNull { it.lastModified() }
         }
-        WCard("安装已下载的包", cached?.let { "${'$'}{it.name} · ${'$'}{it.length() / 1024 / 1024}MB" } ?: "暂无(先点上面的检查更新)") {
-            if (cached == null) { d.text("安装", "没有已下载的安装包"); return@WCard }
-            d.confirm("安装", "直接安装已下载的\n${'$'}{cached.name}?", ok = "安装") {
-                prog = true
-                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    val out = doInstall(ctx, cached)
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        prog = false
-                        when (out) {
-                            is InstallOutcome.Done -> d.text("安装", out.text)
-                            is InstallOutcome.Failed -> d.text("安装失败", out.text)
-                            is InstallOutcome.NeedPermission -> {
-                                try {
-                                    ctx.startActivity(android.content.Intent(
-                                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                        android.net.Uri.parse("package:${'$'}{ctx.packageName}")))
-                                } catch (e: Exception) {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (prog) CompactDialog(title = "安装中", onDismiss = {}) {
-            Text("正在提交安装…", color = LocalWrist.current.text, fontSize = 13.sp)
+        WCard("安装已下载的包",
+            cachedApk?.let { "${it.name} · ${it.length() / 1024 / 1024}MB" } ?: "暂无(先点上面的检查更新)") {
+            val f = cachedApk
+            if (f == null) { d.text("安装", "没有已下载的安装包"); return@WCard }
+            d.confirm("安装", "直接安装已下载的\n${f.name}?", ok = "安装") { startInstall(f) }
         }
     }
     item { WCard("手机同步(二维码)", "") { openSync() } }

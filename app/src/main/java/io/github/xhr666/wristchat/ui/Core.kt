@@ -29,6 +29,8 @@ import androidx.wear.compose.material.curvedText
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -85,21 +87,30 @@ fun RotaryList(listState: LazyListState, enabled: Boolean) {
 }
 
 /**
- * 列表项"焦点缩放":越靠近列表中心的项越大,越靠上下边缘越小并淡出
- * (对应 Wear 设计里的 ScalingLazyColumn 效果)。读取在绘制阶段,不产生逐帧重组。
+ * 焦点缩放/高亮:按"自身中心离屏幕中心的距离"自动缩放并调整亮度。
+ * 中间那一项最大最亮,越靠上/下越小越暗(wear ScalingLazyColumn 的视觉语义)。
+ * 用 onGloballyPositioned 记录位置 + graphicsLayer 绘制阶段读取,滚动时不触发重组。
  */
-fun Modifier.scalingItem(state: LazyListState, index: Int, maxShrink: Float = 0.16f): Modifier = this.graphicsLayer {
-    val info = state.layoutInfo
-    val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return@graphicsLayer
-    val vpStart = info.viewportStartOffset
-    val vpEnd = info.viewportEndOffset
-    val half = ((vpEnd - vpStart) / 2f).coerceAtLeast(1f)
-    val center = item.offset + item.size / 2f
-    val d = (kotlin.math.abs(center - (vpStart + vpEnd) / 2f) / half).coerceIn(0f, 1f)
-    val sc = 1f - maxShrink * d
-    scaleX = sc
-    scaleY = sc
-    alpha = 1f - 0.40f * d
+@Composable
+fun Modifier.centerFocus(maxShrink: Float = 0.14f, maxDim: Float = 0.45f): Modifier {
+    val scale = remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+    val alpha = remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+    val density = LocalDensity.current
+    val cfg = androidx.compose.ui.platform.LocalConfiguration.current
+    val screenHpx = with(density) { cfg.screenHeightDp.dp.toPx() }
+    return this
+        .onGloballyPositioned { c ->
+            val cy = c.positionInRoot().y + c.size.height / 2f
+            val half = (screenHpx / 2f).coerceAtLeast(1f)
+            val d = (kotlin.math.abs(cy - half) / half).coerceIn(0f, 1f)
+            scale.floatValue = 1f - maxShrink * d
+            alpha.floatValue = 1f - maxDim * d
+        }
+        .graphicsLayer {
+            scaleX = scale.floatValue
+            scaleY = scale.floatValue
+            this.alpha = alpha.floatValue
+        }
 }
 
 /** 圆形屏底部安全内边距:列表最后一项用它做 contentPadding.bottom,防止被圆边切掉 */
@@ -328,6 +339,7 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
           onLongClick: (() -> Unit)? = null, onClick: (() -> Unit)? = null) {
     val c = LocalWrist.current
     var m = modifier
+        .centerFocus()
         .fillMaxWidth()
         .padding(vertical = 3.dp)
         .clip(RoundedCornerShape(14.dp))
@@ -346,9 +358,10 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
 @Composable
 fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     val c = LocalWrist.current
-    // 不再保存内部状态:取消设置时开关立即回到真实状态
+    // 不再保存内部状态:取消设置时开关立即回到真实状态;卡片同样带焦点缩放
     Row(
         modifier
+            .centerFocus()
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .clip(RoundedCornerShape(14.dp))

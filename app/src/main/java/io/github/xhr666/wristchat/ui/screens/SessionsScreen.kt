@@ -52,18 +52,16 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
                     top = LocalListCenterPad.current,
                     bottom = LocalListBottomPad.current + LocalRoundBottom.current),
             ) {
-                itemsIndexed(sessions) { i, s ->
-                    Box(Modifier.scalingItem(listState, i)) {
-                        WCard(
+                itemsIndexed(sessions) { _, s ->
+                    WCard(
                             title = s.title.ifBlank { "新会话" },
                             value = sub(s),
                             onClick = {
                                 vm.setCurrentSession(s.id)
                                 onOpenChat()
                             },
-                            onLongClick = { deleteTarget = s },
-                        )
-                    }
+                        onLongClick = { deleteTarget = s },
+                    )
                 }
                 item { Spacer(Modifier.height(4.dp)) }
             }
