@@ -301,64 +301,166 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
     item {
         val ctx = LocalContext.current
         val scope = rememberCoroutineScope()
-        var prog by remember { mutableStateOf<Int?>(null) }
-        // remember 化:item 重组后仍能拿到下载任务,取消按钮才有效(H13)
+        var prog by remember { mutableStateOf<Int?>(null) }              // null=无弹窗; -1=连接/安装中
         var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+        var pendingApk by remember { mutableStateOf<java.io.File?>(null) }  // 等授权后自动继续安装
+        var resultTitle by remember { mutableStateOf("更新") }
+
+        fun startInstall(file: java.io.File) {
+            prog = -1
+            job = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val out = doInstall(ctx, file)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    prog = null
+                    when (out) {
+                        is InstallOutcome.Done -> d.text(resultTitle, out.text)
+                        is InstallOutcome.Failed -> d.text("安装失败", out.text)
+                        is InstallOutcome.NeedPermission -> {
+                            pendingApk = out.apk
+                            d.text("需要授权", "请允许“安装未知应用”;开启后返回会自动继续安装")
+                        }
+                    }
+                }
+            }
+        }
+
+        fun showOutcome(out: InstallOutcome) {
+            when (out) {
+                is InstallOutcome.Done -> d.text(resultTitle, out.text)
+                is InstallOutcome.Failed -> d.text("更新失败", out.text)
+                is InstallOutcome.NeedPermission -> {
+                    pendingApk = out.apk
+                    d.confirm("需要授权",
+                        "安装更新需要允许“安装未知应用”。\n点“去设置”开启后返回,会自动继续安装。", ok = "去设置") {
+                        try {
+                            ctx.startActivity(android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                android.net.Uri.parse("package:${'$'}{ctx.packageName}")))
+                        } catch (e: Exception) { d.text("打不开设置", e.message ?: "") }
+                    }
+                }
+            }
+        }
+
+        // 授权页返回检测:不管用户怎么返回(右滑/返回键),能装了就自动继续安装
+        LaunchedEffect(pendingApk) {
+            val f = pendingApk ?: return@LaunchedEffect
+            repeat(120) {
+                kotlinx.coroutines.delay(700)
+                if (io.github.xhr666.wristchat.data.Installer.canInstall(ctx)) {
+                    pendingApk = null
+                    startInstall(f)
+                    return@LaunchedEffect
+                }
+            }
+        }
+
         WCard("检查更新", "") {
             val repo = UpdateRepository(s)
-            io.github.xhr666.wristchat.data.AppLog.i("upd", "check start v=${s.versionName}")
+            io.github.xhr666.wristchat.data.AppLog.i("upd", "check start v=${'$'}{s.versionName}")
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val r = repo.check()
                     s.lastUpdateCheck = System.currentTimeMillis()
                     io.github.xhr666.wristchat.data.AppLog.i("upd", "check=$r")
-                    launch(kotlinx.coroutines.Dispatchers.Main) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         when (r) {
-                            is UpdateResult.Found -> d.confirm("发现新版本 ${r.info.tagName}",
-                                "当前:${s.versionName}\n${r.info.body.take(160)}", ok = "下载更新") {
-                                io.github.xhr666.wristchat.data.AppLog.i("upd", "user taps download")
-                                prog = -1
-                                job = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                    try {
-                                        val msg = installRelease(ctx, repo, r.info) { done, total ->
-                                            launch(kotlinx.coroutines.Dispatchers.Main) {
-                                                prog = if (total > 0) (done * 100 / total).toInt() else -1
+                            is UpdateResult.Found -> {
+                                resultTitle = "更新 ${'$'}{r.info.tagName}"
+                                d.confirm("发现新版本 ${'$'}{r.info.tagName}",
+                                    "当前:${'$'}{s.versionName} → ${'$'}{r.info.tagName}\n${'$'}{shortNote(r.info.body)}",
+                                    ok = "下载更新") {
+                                    io.github.xhr666.wristchat.data.AppLog.i("upd", "user taps download")
+                                    prog = -1
+                                    job = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                        try {
+                                            val out = installRelease(ctx, repo, r.info) { done, total ->
+                                                scope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                                    prog = if (total > 0) (done * 100 / total).toInt() else -1
+                                                }
+                                            }
+                                            io.github.xhr666.wristchat.data.AppLog.i("upd", "outcome: $out")
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                prog = null; showOutcome(out)
+                                            }
+                                        } catch (e: kotlinx.coroutines.CancellationException) {
+                                            io.github.xhr666.wristchat.data.AppLog.i("upd", "cancelled by user")
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                prog = null
+                                                d.text("已取消", "下载已取消。已下载的部分会保留,下次点更新可续传。")
+                                            }
+                                            throw e
+                                        } catch (e: Exception) {
+                                            io.github.xhr666.wristchat.data.AppLog.i("upd", "err ${'$'}e")
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                prog = null; d.text("更新失败", e.message ?: "未知错误")
                                             }
                                         }
-                                        io.github.xhr666.wristchat.data.AppLog.i("upd", "done: $msg")
-                                        launch(kotlinx.coroutines.Dispatchers.Main) { prog = null; d.text("更新", msg) }
-                                    } catch (e: kotlinx.coroutines.CancellationException) {
-                                        io.github.xhr666.wristchat.data.AppLog.i("upd", "cancelled by user")
-                                        launch(kotlinx.coroutines.Dispatchers.Main) { prog = null }
-                                        throw e
-                                    } catch (e: Exception) {
-                                        io.github.xhr666.wristchat.data.AppLog.i("upd", "err ${e}")
-                                        launch(kotlinx.coroutines.Dispatchers.Main) { prog = null; d.text("更新失败", e.message ?: "未知错误") }
                                     }
                                 }
                             }
-                            is UpdateResult.UpToDate -> d.text("更新", "已是最新(${r.latest})")
-                            is UpdateResult.NoApk -> d.text("更新", "发现 ${r.latest},但无 APK 资产")
+                            is UpdateResult.UpToDate -> d.text("更新", "已是最新(${'$'}{r.latest})")
+                            is UpdateResult.NoApk -> d.text("更新", "发现 ${'$'}{r.latest},但无 APK 资产")
                             is UpdateResult.Error -> d.text("更新失败", r.message)
                         }
                     }
                 } catch (e: Exception) {
-                    io.github.xhr666.wristchat.data.AppLog.i("upd", "check err ${e}")
-                    launch(kotlinx.coroutines.Dispatchers.Main) { d.text("更新失败", e.message ?: "未知错误") }
+                    io.github.xhr666.wristchat.data.AppLog.i("upd", "check err ${'$'}e")
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        d.text("更新失败", e.message ?: "未知错误")
+                    }
                 }
             }
         }
+        // 下载进度:统一样式弹窗;只有“取消”能取消(点外部不误取消)
         prog?.let { p ->
-            AlertDialog(
-                onDismissRequest = {},
-                title = { Text("下载更新", fontSize = 15.sp) },
-                text = { Text(if (p < 0) "连接中…" else "下载中 $p%", fontSize = 13.sp) },
-                confirmButton = {},
-                dismissButton = { TextButton(onClick = { job?.cancel() }) { Text("取消") } },
-                containerColor = MaterialTheme.colorScheme.surface,
-            )
+            CompactDialog(
+                title = "下载更新",
+                onDismiss = {},
+                dismissText = "取消",
+                onDismissButton = { job?.cancel() },
+            ) {
+                Text(if (p < 0) "连接中…" else "下载中 $p%", color = LocalWrist.current.text, fontSize = 13.sp)
+            }
         }
+    }
+    item {
+        val ctx = LocalContext.current
+        val scope = rememberCoroutineScope()
+        var prog by remember { mutableStateOf(false) }
+        // 已下载但上次没装上的包:补救入口
+        val cached = remember {
+            java.io.File(ctx.cacheDir, "updates").listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".apk") }
+                ?.maxByOrNull { it.lastModified() }
         }
+        WCard("安装已下载的包", cached?.let { "${'$'}{it.name} · ${'$'}{it.length() / 1024 / 1024}MB" } ?: "暂无(先点上面的检查更新)") {
+            if (cached == null) { d.text("安装", "没有已下载的安装包"); return@WCard }
+            d.confirm("安装", "直接安装已下载的\n${'$'}{cached.name}?", ok = "安装") {
+                prog = true
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val out = doInstall(ctx, cached)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        prog = false
+                        when (out) {
+                            is InstallOutcome.Done -> d.text("安装", out.text)
+                            is InstallOutcome.Failed -> d.text("安装失败", out.text)
+                            is InstallOutcome.NeedPermission -> {
+                                try {
+                                    ctx.startActivity(android.content.Intent(
+                                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        android.net.Uri.parse("package:${'$'}{ctx.packageName}")))
+                                } catch (e: Exception) {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (prog) CompactDialog(title = "安装中", onDismiss = {}) {
+            Text("正在提交安装…", color = LocalWrist.current.text, fontSize = 13.sp)
+        }
+    }
     item { WCard("手机同步(二维码)", "") { openSync() } }
     item { WCard("自动检查冷却(分钟)", s.updateCooldownMin.toString()) { d.num("冷却(5-60)", s.updateCooldownMin.toFloat(), 5f, 60f) { s.updateCooldownMin = it.toInt() } } }
 }

@@ -15,41 +15,60 @@ private const val LICENSE_TEXT = """
 - kotlinx-coroutines (Apache-2.0)
 """
 
+/** 安装结果:需要授权时把已下载的包带回去,授权返回后可自动继续安装 */
+sealed class InstallOutcome {
+    data class Done(val text: String) : InstallOutcome()
+    data class NeedPermission(val apk: java.io.File) : InstallOutcome()
+    data class Failed(val text: String) : InstallOutcome()
+}
+
 suspend fun installRelease(
     ctx: Context, repo: io.github.xhr666.wristchat.data.UpdateRepository, info: io.github.xhr666.wristchat.data.ReleaseInfo,
     onProgress: (Long, Long) -> Unit = { _, _ -> },
-): String {
+): InstallOutcome {
     val dir = java.io.File(ctx.cacheDir, "updates").apply { mkdirs() }
     val target = java.io.File(dir, info.apkName ?: "update.apk")
+    // 已下载完整且哈希通过 → 直接安装
     if (target.exists() && target.length() > 0 && repo.verifySha256(info.sha256, target)) {
         return doInstall(ctx, target)
     }
     val note = if (target.exists() && target.length() > 0) "(有 ${target.length() / 1024}KB 部分,将续传)" else ""
     if (!repo.download(info.apkUrl ?: "", target, onProgress)) {
-        return if (target.exists() && target.length() > 0)
-            "下载中断,已保留 ${target.length() / 1024}KB\n恢复网络后重新下载会断点续传$note"
-        else "下载失败,请重试"
+        return InstallOutcome.Failed(
+            if (target.exists() && target.length() > 0)
+                "下载中断,已保留 ${target.length() / 1024}KB\n恢复网络后重新下载会断点续传$note"
+            else "下载失败,请重试"
+        )
     }
-    if (!repo.verifySha256(info.sha256, target)) { target.delete(); return "下载校验失败,已取消" }
+    if (!repo.verifySha256(info.sha256, target)) {
+        // 多见于续传拼接出的坏包:删掉整包,干净重下一次(只重试一次)
+        target.delete()
+        val ok = repo.download(info.apkUrl ?: "", target, onProgress) && repo.verifySha256(info.sha256, target)
+        if (!ok) {
+            target.delete()
+            return InstallOutcome.Failed("下载校验失败(已重新下载一次),请稍后再试")
+        }
+    }
     return doInstall(ctx, target)
 }
 
-private suspend fun doInstall(ctx: Context, target: java.io.File): String {
-    if (!Installer.canInstall(ctx)) {
-        io.github.xhr666.wristchat.data.AppLog.i("install", "need unknown-sources permission")
-        Installer.openManageUnknownSources(ctx)
-        return "需要允许安装:已打开系统设置,请开启“允许安装未知应用”后返回重试"
-    }
+suspend fun doInstall(ctx: Context, target: java.io.File): InstallOutcome {
+    if (!Installer.canInstall(ctx)) return InstallOutcome.NeedPermission(target)
     return when (val r = Installer.submit(ctx, target)) {
-        is InstallerResult.NeedPermission ->
-            "请先允许 WristChat 安装未知应用,再点一次更新"
-        is InstallerResult.Submitted -> {
-            io.github.xhr666.wristchat.data.AppLog.i("install", "submitted ${r.id}")
-            "已提交安装,请留意系统安装确认"
-        }
-        is InstallerResult.Fail -> "安装失败:${r.msg}"
+        is InstallerResult.NeedPermission -> InstallOutcome.NeedPermission(target)
+        is InstallerResult.Submitted -> InstallOutcome.Done("已提交安装,请在系统弹窗里点“安装”")
+        is InstallerResult.Fail -> InstallOutcome.Failed("安装失败:${r.msg}")
     }
 }
+
+/** 更新弹窗里只显示简短说明:去 Markdown 标记,取前 3 行非空内容 */
+fun shortNote(body: String): String =
+    body.lineSequence()
+        .map { it.trim().trimStart('#', '-', '*', ' ').replace("**", "").replace("`", "") }
+        .filter { it.isNotBlank() }
+        .take(3)
+        .joinToString("\n")
+        .take(160)
 
 fun themeName(t: String) = when (t) { "light" -> "亮色"; "dark" -> "暗色"; else -> "AMOLED 纯黑" }
 fun hashPin(pin: String, salt: String): String {

@@ -58,24 +58,25 @@ class UpdateRepository(private val settings: SettingsStore) {
         var apkUrl: String? = null
         var apkName: String? = null
         if (assets != null) {
-            for (i in 0 until assets.length()) {
-                val a = assets.optJSONObject(i) ?: continue
-                val name = a.optString("name")
-                if (name.endsWith(".apk")) {
-                    apkUrl = a.optString("browser_download_url")
-                    apkName = name
-                    break
-                }
+            // 先找 release 包;没有再退回任意 apk(避免装到 debug 包导致签名不匹配)
+            val apkAssets = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }
+                .filter { it.optString("name").endsWith(".apk", ignoreCase = true) }
+            val pick = apkAssets.firstOrNull { it.optString("name").contains("release", true) }
+                ?: apkAssets.firstOrNull()
+            if (pick != null) {
+                apkUrl = pick.optString("browser_download_url")
+                apkName = pick.optString("name")
             }
         }
         if (apkUrl == null) return UpdateResult.NoApk(tag)
 
-        // sha256 资产(可选)
+        // sha256 资产(可选):必须与所选 APK 同名(apk + ".sha256"),否则不校验
         var sha: String? = null
-        if (assets != null) {
+        if (assets != null && apkName != null) {
+            val want = "$apkName.sha256"
             for (i in 0 until assets.length()) {
                 val a = assets.optJSONObject(i) ?: continue
-                if (a.optString("name").endsWith(".sha256")) {
+                if (a.optString("name").equals(want, ignoreCase = true)) {
                     sha = a.optString("browser_download_url").takeIf { it.isNotBlank() }
                     break
                 }

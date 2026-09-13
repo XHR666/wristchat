@@ -33,6 +33,7 @@ fun CompactDialog(
     confirmEnabled: Boolean = true,
     onConfirm: (() -> Unit)? = null,
     dismissText: String? = null,
+    onDismissButton: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val c = LocalWrist.current
@@ -68,7 +69,7 @@ fun CompactDialog(
                     if (confirmText != null || dismissText != null) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                             if (dismissText != null) {
-                                TextButton(onClick = onDismiss) { Text(dismissText, color = c.hint, fontSize = 13.sp) }
+                                TextButton(onClick = onDismissButton ?: onDismiss) { Text(dismissText, color = c.hint, fontSize = 13.sp) }
                             }
                             if (confirmText != null) {
                                 TextButton(onClick = onConfirm ?: {}, enabled = confirmEnabled) {

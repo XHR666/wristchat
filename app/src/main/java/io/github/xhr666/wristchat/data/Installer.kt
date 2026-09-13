@@ -57,16 +57,11 @@ object Installer {
                     Intent(ACTION_RESULT).setPackage(ctx.packageName),
                     if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_UPDATE_CURRENT,
                 )
-                // API 34 stub 未公开 commitSession,设备(API30)存在 → 反射调用
-                try {
-                    val m = PackageInstaller::class.java.getMethod(
-                        "commitSession", Int::class.javaPrimitiveType, android.content.IntentSender::class.java)
-                    m.invoke(installer, sessionId, pi.intentSender)
-                } catch (nsme: NoSuchMethodException) {
-                    val m2 = PackageInstaller::class.java.getMethod(
-                        "commitSession", Int::class.javaPrimitiveType, PendingIntent::class.java)
-                    m2.invoke(installer, sessionId, pi)
-                }
+                // 用公开 API(API 21+)提交会话。
+                // 之前反射 PackageInstaller.commitSession(...) 是隐藏方法:API 34 stub 没有、
+                // 设备上反射也失败(日志里那条 commitSession [int, class PendingIntent]),
+                // 所以"安装失败"。Session.commit(IntentSender) 是公开接口,直接调用即可。
+                session.commit(pi.intentSender)
                 committed = true
                 InstallerResult.Submitted(sessionId)
             } finally {
