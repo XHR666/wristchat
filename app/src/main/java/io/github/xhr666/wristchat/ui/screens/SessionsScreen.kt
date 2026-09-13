@@ -48,7 +48,9 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
                     .weight(1f)
                     .padding(horizontal = 20.dp)
                     ,
-                contentPadding = PaddingValues(top = 4.dp, bottom = LocalRoundBottom.current),
+                contentPadding = PaddingValues(
+                    top = LocalListCenterPad.current,
+                    bottom = LocalListBottomPad.current + LocalRoundBottom.current),
             ) {
                 itemsIndexed(sessions) { i, s ->
                     Box(Modifier.scalingItem(listState, i)) {

@@ -23,6 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.wear.compose.foundation.CurvedLayout
+import androidx.wear.compose.material.curvedText
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -102,6 +105,15 @@ fun Modifier.scalingItem(state: LazyListState, index: Int, maxShrink: Float = 0.
 /** 圆形屏底部安全内边距:列表最后一项用它做 contentPadding.bottom,防止被圆边切掉 */
 val LocalRoundBottom = staticCompositionLocalOf { 26.dp }
 
+/**
+ * 列表首/末项居中留白(官方 ScalingLazyColumn 的 autoCentering 语义):
+ * 滚到顶部时第一项正好在屏幕中间,滚到底部时最后一项也能停在中间。
+ */
+val LocalListCenterPad = staticCompositionLocalOf { 0.dp }
+
+/** 列表末项居中留白:让最后一项也能停在屏幕中间(配合 LocalListCenterPad 使用) */
+val LocalListBottomPad = staticCompositionLocalOf { 0.dp }
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ScreenScaffold(
@@ -118,9 +130,20 @@ fun ScreenScaffold(
         val w = maxWidth; val h = maxHeight
         // 底部圆边内缩量:越靠底部,可视宽度越窄 → 给内容列表留出安全边距
         val bottomSafe = roundInset(w, h, h - 4.dp) + 12.dp
-        CompositionLocalProvider(LocalRoundBottom provides bottomSafe) {
+        val showClock = showTimeAlways || showTimeAtTop
+        val topPad = if (showClock) 30.dp else 12.dp
+        // 让首/末项中心落在"屏幕中心"(h/2),而不是列表可视区中心
+        val itemHalf = 36.dp
+        val listTop = topPad + 40.dp
+        val listCenterPad = ((h / 2) - listTop - itemHalf).coerceAtLeast(0.dp)
+        val listBottomPad = ((h / 2) - itemHalf).coerceAtLeast(0.dp)
+        CompositionLocalProvider(
+            LocalRoundBottom provides bottomSafe,
+            LocalListCenterPad provides listCenterPad,
+            LocalListBottomPad provides listBottomPad,
+        ) {
         Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(top = 12.dp)) {
+        Column(Modifier.fillMaxSize().padding(top = topPad)) {
             val inset = roundInset(w, h, 12.dp + 20.dp)
             var swipeAcc by remember { mutableStateOf(0f) }
             var rowMod = Modifier.fillMaxWidth().height(40.dp).padding(start = inset + 6.dp, end = inset + 6.dp)
@@ -137,28 +160,61 @@ fun ScreenScaffold(
                 }
             }
             Row(rowMod, verticalAlignment = Alignment.CenterVertically) {
-                if (showTimeAlways || showTimeAtTop) {
-                    Text(TextTime.now(), color = c.hint, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(end = 6.dp))
-                }
                 Text(title, color = c.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, modifier = Modifier.weight(1f))
                 actions()
             }
             content()
         }
-        // 圆表侧边弧形滚动进度(wear PositionIndicator 风格):贴右圆弧显示进度
-        if (scrollIndicator != null) ArcScrollIndicator(scrollIndicator)
+        // 顶部弧形时间(官方 CurvedText:文字沿圆表上沿弧线排布)
+        if (showClock) CurvedClock()
+        // 右侧小巧滚动进度条(仿 wear PositionIndicator,滚动时出现)
+        if (scrollIndicator != null) SmallScrollIndicator(scrollIndicator)
         }
         }
     }
 }
 
-/** 贴右圆弧的滚动进度指示(读数在绘制阶段,滚动不触发重组) */
+/** 顶部弧形时间:官方 wear CurvedLayout + CurvedText,沿圆表上沿排布 */
+@OptIn(androidx.wear.compose.foundation.ExperimentalWearFoundationApi::class)
 @Composable
-private fun ArcScrollIndicator(state: LazyListState) {
-    val strokePx = with(LocalDensity.current) { 3.dp.toPx() }
-    val padPx = with(LocalDensity.current) { 7.dp.toPx() }
+private fun CurvedClock() {
+    val c = LocalWrist.current
+    var now by remember { mutableStateOf(TextTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) { kotlinx.coroutines.delay(5_000); now = TextTime.now() }
+    }
+    CurvedLayout(
+        anchor = 270f,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        curvedText(
+            text = now,
+            color = c.hint,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+/**
+ * 右侧小巧滚动进度条(仿 wear PositionIndicator):
+ * 屏幕最右侧一小段细条,随滚动沿圆弧移动,停止滚动 1 秒后淡出。
+ */
+@Composable
+private fun SmallScrollIndicator(state: LazyListState) {
+    val barW = 3.dp
+    val barH = 26.dp
+    val edge = 5.dp
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(state.isScrollInProgress) {
+        if (state.isScrollInProgress) {
+            visible = true
+        } else if (visible) {
+            kotlinx.coroutines.delay(1000)
+            visible = false
+        }
+    }
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
         val info = state.layoutInfo
         if (info.totalItemsCount == 0) return@Canvas
@@ -169,23 +225,25 @@ private fun ArcScrollIndicator(state: LazyListState) {
         if (contentH <= viewport) return@Canvas
         val scrolled = state.firstVisibleItemIndex * perItem + info.viewportStartOffset
         val progress = (scrolled / (contentH - viewport)).coerceIn(0f, 1f)
-        val radius = size.minDimension / 2f - padPx
+
+        val r = size.minDimension / 2f - edge.toPx()
         val cx = size.width / 2f
         val cy = size.height / 2f
-        val start = -62f
-        val sweep = 124f
-        val topLeft = androidx.compose.ui.geometry.Offset(cx - radius, cy - radius)
-        val arcSize = androidx.compose.ui.geometry.Size(radius * 2, radius * 2)
-        drawArc(color = Color.White.copy(alpha = 0.10f), startAngle = start, sweepAngle = sweep,
-            useCenter = false, topLeft = topLeft, size = arcSize,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokePx, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-        drawArc(color = Color.White.copy(alpha = 0.75f), startAngle = start, sweepAngle = sweep * progress,
-            useCenter = false, topLeft = topLeft, size = arcSize,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokePx, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-        val a = Math.toRadians((start + sweep * progress).toDouble())
-        drawCircle(color = Color.White, radius = strokePx * 1.15f,
-            center = androidx.compose.ui.geometry.Offset(cx + radius * kotlin.math.cos(a).toFloat(),
-                cy + radius * kotlin.math.sin(a).toFloat()))
+        // 沿右侧圆弧:-42°(上) → +42°(下)
+        val deg = -42f + 84f * progress
+        val rad = Math.toRadians(deg.toDouble())
+        val px = cx + r * kotlin.math.cos(rad).toFloat()
+        val py = cy + r * kotlin.math.sin(rad).toFloat()
+        val alpha = if (visible) 0.85f else 0f
+        if (alpha <= 0f) return@Canvas
+        rotate(degrees = deg, pivot = androidx.compose.ui.geometry.Offset(px, py)) {
+            drawRoundRect(
+                color = Color.White.copy(alpha = alpha),
+                topLeft = androidx.compose.ui.geometry.Offset(px - barW.toPx() / 2f, py - barH.toPx() / 2f),
+                size = androidx.compose.ui.geometry.Size(barW.toPx(), barH.toPx()),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barW.toPx() / 2f),
+            )
+        }
     }
 }
 

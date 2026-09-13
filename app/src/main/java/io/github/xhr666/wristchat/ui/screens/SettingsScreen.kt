@@ -56,25 +56,32 @@ fun SettingsMenuScreen(settings: SettingsStore) {
     val listState = rememberLazyListState()
     LaunchedEffect(Unit) { vm.refreshSizes() }
 
-    openCat?.let { cat ->
-        CategoryScreen(settings, vm, cat) { openCat = null }
-        return
-    }
-
-    ScreenScaffold(title = "设置", showTimeAlways = true, scrollIndicator = listState) {
-        Column(Modifier.fillMaxSize()) {
-            if (warn) Text("会话已达上限,建议清理", color = Color(0xFFFFD9A0), fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().background(Color(0xFF3D2E14)).padding(6.dp))
-            LazyColumn(state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = LocalRoundBottom.current)) {
-                itemsIndexed(CATS) { i, cat ->
-                    Box(Modifier.scalingItem(listState, i)) { WCard(cat.title, cat.desc) { openCat = cat.key } }
+    Box(Modifier.fillMaxSize()) {
+        // 菜单常驻组合:分类页右滑返回时下面露出的就是它(不再黑屏)
+        ScreenScaffold(title = "设置", showTimeAlways = true,
+            scrollIndicator = if (openCat == null) listState else null) {
+            Column(Modifier.fillMaxSize()) {
+                if (warn) Text("会话已达上限,建议清理", color = Color(0xFFFFD9A0), fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF3D2E14)).padding(6.dp))
+                LazyColumn(state = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    // 圆表:首项居中 + 末项也能滚到中间(官方 ScalingLazyColumn 的居中语义)
+                    contentPadding = PaddingValues(
+                        start = 18.dp, end = 18.dp,
+                        top = LocalListCenterPad.current,
+                        bottom = LocalListBottomPad.current + LocalRoundBottom.current),
+                ) {
+                    itemsIndexed(CATS) { i, cat ->
+                        Box(Modifier.scalingItem(listState, i)) { WCard(cat.title, cat.desc) { openCat = cat.key } }
+                    }
                 }
             }
+            RotaryList(listState, enabled = LocalCurrentPage.current == 3 && openCat == null)
         }
-        RotaryList(listState, enabled = LocalCurrentPage.current == 3)
+        openCat?.let { cat ->
+            CategoryScreen(settings, vm, cat) { openCat = null }
+        }
     }
 }
 
@@ -85,55 +92,56 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
     var syncOpen by remember { mutableStateOf(false) }
     var logPage by remember { mutableStateOf<String?>(null) }  // crash / anr / run
 
-    // 分类页/同步页期间锁定横滑翻页:SideEffect 提交后写(不在组合期直接写),
-    // DisposableEffect 保证退出即解锁;syncOpen 切换不再出现 unlocked 空隙
+    // 分类页/同步页期间锁定横滑翻页:SideEffect 提交后写(不在组合期直接写)
     SideEffect { PagerLock.locked = true }
     DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
 
-    // 日志走全屏页而非弹窗:弹窗在部分机型上有卡死风险,日志必须能稳定打开
-    logPage?.let { t ->
-        val app = LocalContext.current.applicationContext as io.github.xhr666.wristchat.WristChatApp
-        LogViewerScreen(
-            title = when (t) { "crash" -> "崩溃日志"; "anr" -> "ANR/卡死日志"; else -> "运行日志" },
-            load = when (t) {
-                "crash" -> { { app.crashLogText() } }
-                "anr" -> { { app.anrLogText() } }
-                else -> { { io.github.xhr666.wristchat.data.AppLog.read() } }
-            },
-            onBack = { logPage = null },
-        )
-        return
-    }
-
-    if (syncOpen) {
-        SyncOverlay(settings, vm) { syncOpen = false }
-        return
-    }
-
     settings.rev   // 订阅设置变化:服务商/Key/地址等改完立即反映到界面
-    SwipeBackContainer(onBack = onBack) {
-    ScreenScaffold(title = CAT_TITLE[cat] ?: "设置",
-        actions = { SmallAction("‹") { onBack() } },
-        onHeaderSwipeBack = onBack,
-        scrollIndicator = listState) {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = LocalRoundBottom.current)) {
-                when (cat) {
-                    "service" -> serviceRows(settings, dialogs)
-                    "model" -> modelRows(settings, dialogs)
-                    "quick" -> quickRows(settings, dialogs)
-                    "skills_memory" -> skillRows(settings, vm, dialogs)
-                    "sessions" -> sessionRows(settings, vm, dialogs)
-                    "storage" -> storageRows(settings, vm, dialogs)
-                    "update" -> updateRows(settings, dialogs) { syncOpen = true }
-                    "security" -> securityRows(settings, dialogs)
-                    "about" -> aboutRows(settings, vm, dialogs) { logPage = it }
+    Box(Modifier.fillMaxSize()) {
+        // 分类页本体:右滑跟手退出时,下面露出的是设置菜单(由上层组合提供)
+        SwipeBackContainer(onBack = onBack) {
+            ScreenScaffold(title = CAT_TITLE[cat] ?: "设置",
+                actions = { SmallAction("‹") { onBack() } },
+                onHeaderSwipeBack = onBack,
+                scrollIndicator = if (!syncOpen && logPage == null) listState else null) {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 18.dp, end = 18.dp,
+                        top = LocalListCenterPad.current,
+                        bottom = LocalListBottomPad.current + LocalRoundBottom.current)) {
+                    when (cat) {
+                        "service" -> serviceRows(settings, dialogs)
+                        "model" -> modelRows(settings, dialogs)
+                        "quick" -> quickRows(settings, dialogs)
+                        "skills_memory" -> skillRows(settings, vm, dialogs)
+                        "sessions" -> sessionRows(settings, vm, dialogs)
+                        "storage" -> storageRows(settings, vm, dialogs)
+                        "update" -> updateRows(settings, dialogs) { syncOpen = true }
+                        "security" -> securityRows(settings, dialogs)
+                        "about" -> aboutRows(settings, vm, dialogs) { logPage = it }
+                    }
                 }
+                RotaryList(listState, enabled = LocalCurrentPage.current == 3 && !syncOpen && logPage == null)
             }
-            RotaryList(listState, enabled = LocalCurrentPage.current == 3)
+        }
+        // 同步页 / 日志页:叠在分类页之上,返回时露出分类页
+        if (syncOpen) {
+            SyncOverlay(settings, vm) { syncOpen = false }
+        }
+        logPage?.let { t ->
+            val app = LocalContext.current.applicationContext as WristChatApp
+            LogViewerScreen(
+                title = when (t) { "crash" -> "崩溃日志"; "anr" -> "ANR/卡死日志"; else -> "运行日志" },
+                load = when (t) {
+                    "crash" -> { { app.crashLogText() } }
+                    "anr" -> { { app.anrLogText() } }
+                    else -> { { io.github.xhr666.wristchat.data.AppLog.read() } }
+                },
+                onBack = { logPage = null },
+            )
         }
     }
-        WDialogHost(dialogs)
+    WDialogHost(dialogs)
 }
 
 // ---------- 各行内容 ----------

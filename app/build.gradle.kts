@@ -15,8 +15,8 @@ android {
         applicationId = "io.github.xhr666.wristchat"
         minSdk = 30
         targetSdk = 34
-        versionCode = 25
-        versionName = "0.5.1"
+        versionCode = 26
+        versionName = "0.6.0"
     }
 
     signingConfigs {
@@ -72,6 +72,10 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.runtime:runtime-livedata")
+    // Wear 官方组件库:CurvedText 弧形文本 / ScalingLazyColumn 居中缩放列表 / PositionIndicator 侧边进度 / TimeText
+    // 选 1.4.1 稳定线:与本项目 Compose 1.6.8 + Kotlin 2.0.20 + compileSdk 34 完全匹配
+    implementation("androidx.wear.compose:compose-foundation:1.4.1")
+    implementation("androidx.wear.compose:compose-material:1.4.1")
 
     // 渲染与工具
     implementation("io.noties.markwon:core:4.6.2")
