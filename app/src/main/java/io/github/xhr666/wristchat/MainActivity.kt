@@ -37,14 +37,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            )
+        // 用现代的 WindowInsets 控制器(旧的 systemUiVisibility 沉浸式 flag 在 Android 11 上
+        // 与输入法同屏时容易出现光标/预览错位,正是我们遇到的键盘 bug)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
         setContent {
             WristAppRoot(settings, foregroundEpoch.value)
         }
@@ -64,10 +64,10 @@ class MainActivity : ComponentActivity() {
             val raw = if (kotlin.math.abs(axis) > 0.01f) axis else -ev.getAxisValue(MotionEvent.AXIS_VSCROLL)
             if (kotlin.math.abs(raw) > 0.01f) {
                 val sign = if (raw > 0) 1 else -1
-                val detents = kotlin.math.abs(raw).coerceIn(0.5f, 4f)
-                // 每格 ≈ 38dp(约半张卡片),多格事件按格数累加;快慢完全由转动格数决定
-                val stepPx = 38f * resources.displayMetrics.density
-                RotaryBus.emit((sign * stepPx * detents).toInt())
+                // 不看 magnitude:某些固件"慢转的数值反而大",按数值缩放会导致快慢颠倒。
+                // 固定"一次事件≈一格≈34dp",快慢完全由事件密度(转了多少格)决定,松手后还有惯性滑行。
+                val stepPx = 34f * resources.displayMetrics.density
+                RotaryBus.emit((sign * stepPx).toInt())
             }
             return true
         }

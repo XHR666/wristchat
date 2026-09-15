@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
@@ -67,22 +68,46 @@ object RotaryBus {
     // 于是"转得快反而走得慢"。改为累加 + 每帧消费一次,快转不丢步。
     private val acc = java.util.concurrent.atomic.AtomicInteger(0)
     private const val LIMIT = 900
+    @Volatile private var lastEventAt = 0L
     fun emit(delta: Int) {
         val v = acc.addAndGet(delta)
         if (v > LIMIT) acc.set(LIMIT) else if (v < -LIMIT) acc.set(-LIMIT)
+        lastEventAt = System.currentTimeMillis()
     }
     fun drain(): Int = acc.getAndSet(0)
+    /** 表冠是否已停手(用于触发惯性滑行) */
+    fun idle(ms: Long = 110): Boolean = System.currentTimeMillis() - lastEventAt > ms
 }
 
 @Composable
 fun RotaryList(listState: LazyListState, enabled: Boolean) {
     LaunchedEffect(enabled) {
         if (!enabled) return@LaunchedEffect
+        var velocity = 0f                                  // 平滑后的速度(px/ms)
+        var flingJob: kotlinx.coroutines.Job? = null
         while (true) {
-            withFrameNanos { }                       // 每帧把累积的旋转量一次性消费
-            // 每帧最多推进 240px,快速旋转也不会"瞬移"
-            val d = RotaryBus.drain().coerceIn(-240, 240)
-            if (d != 0) listState.dispatchRawDelta(d.toFloat())
+            withFrameNanos { }                              // 每帧消费一次累积量
+            val d = RotaryBus.drain()
+            if (d != 0) {
+                flingJob?.cancel(); flingJob = null          // 新的转动立刻接管惯性
+                val px = d.coerceIn(-240, 240)
+                listState.dispatchRawDelta(px.toFloat())
+                velocity = 0.65f * velocity + 0.35f * (px / 16.7f)
+            } else if (velocity != 0f && RotaryBus.idle()) {
+                // 官方 rotaryScrollable 的做法:松手后按最后速度滑行一段(惯性/滑行)
+                val v = velocity
+                velocity = 0f
+                if (kotlin.math.abs(v) > 0.5f) {
+                    val distance = (v * 150f).coerceIn(-1800f, 1800f)
+                    flingJob = launch {
+                        runCatching {
+                            listState.animateScrollBy(distance,
+                                androidx.compose.animation.core.tween(
+                                    300, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -224,6 +249,25 @@ private fun SmallScrollIndicator(state: LazyListState) {
     val edge = 5.dp
     var visible by remember { mutableStateOf(false) }
     var activity by remember { mutableStateOf(0) }
+    val progressTarget = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    // 进度只在布局变化时重算,再由动画平滑过渡 → 视觉上是"滑"而不是"跳"
+    LaunchedEffect(state) {
+        snapshotFlow { state.layoutInfo }.collect { info ->
+            val first = info.visibleItemsInfo.firstOrNull()
+            if (first != null && info.totalItemsCount > 1) {
+                val visibleCount = info.visibleItemsInfo.size.coerceAtLeast(1)
+                val scrollable = (info.totalItemsCount - visibleCount).coerceAtLeast(1)
+                val perItem = first.size.coerceAtLeast(1).toFloat()
+                val fraction = (info.viewportStartOffset - first.offset).toFloat() / perItem
+                progressTarget.floatValue = ((first.index + fraction) / scrollable).coerceIn(0f, 1f)
+            }
+        }
+    }
+    val smooth by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = progressTarget.floatValue,
+        animationSpec = androidx.compose.animation.core.tween(220),
+        label = "scrollIndicator",
+    )
     // 监听列表布局变化(触屏拖动、表冠 dispatchRawDelta 都会改变 layoutInfo)
     LaunchedEffect(state) {
         snapshotFlow {
@@ -240,16 +284,7 @@ private fun SmallScrollIndicator(state: LazyListState) {
     }
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
         if (!visible) return@Canvas
-        val info = state.layoutInfo
-        val total = info.totalItemsCount
-        if (total <= 1) return@Canvas
-        val first = info.visibleItemsInfo.firstOrNull() ?: return@Canvas
-        val visibleCount = info.visibleItemsInfo.size.coerceAtLeast(1)
-        val scrollableCount = (total - visibleCount).coerceAtLeast(1)
-        val perItem = (first.size.coerceAtLeast(1)).toFloat()
-        val fraction = (info.viewportStartOffset - first.offset).toFloat() / perItem
-        val progress = ((first.index + fraction) / scrollableCount).coerceIn(0f, 1f)
-
+        val progress = smooth
         val r = size.minDimension / 2f - edge.toPx()
         val cx = size.width / 2f
         val cy = size.height / 2f
@@ -355,12 +390,12 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
         .clip(RoundedCornerShape(16.dp))
         .background(c.surface)
         .border(1.dp, c.border, RoundedCornerShape(16.dp))
-        .padding(horizontal = 16.dp, vertical = 14.dp)
+        .padding(horizontal = 17.dp, vertical = 16.dp)
     m = if (onLongClick != null) m.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick)
     else if (onClick != null) m.clickable { onClick() } else m
     Column(m) {
-        Text(title, color = c.text, fontSize = 15.5.sp)
-        if (value.isNotEmpty()) Text(value, color = c.hint, fontSize = 12.sp, lineHeight = 15.sp,
+        Text(title, color = c.text, fontSize = 16.sp)
+        if (value.isNotEmpty()) Text(value, color = c.hint, fontSize = 12.5.sp, lineHeight = 16.sp,
             modifier = Modifier.padding(top = 3.dp))
     }
 }
