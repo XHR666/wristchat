@@ -88,9 +88,14 @@ fun queryName(ctx: Context, uri: Uri): String? = runCatching {
 
 fun licenseText(): String = LICENSE_TEXT
 
-/** 导出三个日志到公共 Download/WristChat/(数据线/文件管理器可取),返回结果文案 */
+/**
+ * 导出三个日志到公共 Download/WristChat/<当天日期>/<时间>-*.log
+ * 上限 50 个文件:超出后删除最久的一个
+ */
 fun exportLogs(ctx: Context): String {
     val app = ctx.applicationContext as? io.github.xhr666.wristchat.WristChatApp ?: return "导出失败:上下文异常"
+    val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+    val stamp = java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date())
     val items = listOf(
         "crash.log" to app.crashLogText(),
         "anr.log" to app.anrLogText(),
@@ -101,14 +106,44 @@ fun exportLogs(ctx: Context): String {
         var n = 0
         for ((name, text) in items) {
             val values = android.content.ContentValues().apply {
-                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "$stamp-$name.txt")
                 put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/WristChat")
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/WristChat/$day")
             }
             val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: continue
             resolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
             n++
         }
-        "已导出 $n 个日志到 Download/WristChat/"
+        val removed = trimOldExports(ctx, keep = 50)
+        "已导出 $n 个日志到 Download/WristChat/$day/" + if (removed > 0) "(清理了 $removed 个旧日志)" else ""
     } catch (e: Exception) { "导出失败:${e.message}" }
+}
+
+/** 保留最近 keep 个导出文件,删除更早的 */
+private fun trimOldExports(ctx: Context, keep: Int): Int {
+    return try {
+        val col = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        val proj = arrayOf(android.provider.MediaStore.MediaColumns._ID, android.provider.MediaStore.MediaColumns.DATE_ADDED)
+        val sel = "${android.provider.MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+        val args = arrayOf("Download/WristChat%")
+        val rows = mutableListOf<Pair<Long, Long>>()
+        ctx.contentResolver.query(col, proj, sel, args, "${android.provider.MediaStore.MediaColumns.DATE_ADDED} ASC")?.use { cur ->
+            val idCol = cur.getColumnIndexOrThrow(android.provider.MediaStore.MediaColumns._ID)
+            val dCol = cur.getColumnIndexOrThrow(android.provider.MediaStore.MediaColumns.DATE_ADDED)
+            while (cur.moveToNext()) rows.add(cur.getLong(idCol) to cur.getLong(dCol))
+        }
+        var removed = 0
+        val excess = rows.size - keep
+        if (excess > 0) {
+            for (i in 0 until excess) {
+                runCatching {
+                    ctx.contentResolver.delete(col,
+                        "${android.provider.MediaStore.MediaColumns._ID}=?",
+                        arrayOf(rows[i].first.toString()))
+                }
+                removed++
+            }
+        }
+        removed
+    } catch (e: Exception) { 0 }
 }

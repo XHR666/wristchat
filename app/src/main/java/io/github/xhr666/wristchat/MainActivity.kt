@@ -57,17 +57,13 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
         if (ev.action == MotionEvent.ACTION_SCROLL) {
-            // 官方语义:RotaryScrollEvent.verticalScrollPixels 已经是"像素",
-            // 一格(一个 detent)≈ 平台滚动因子(ViewConfiguration.scaledVerticalScrollFactor ≈ 64dp)。
-            // 旧实现每格只给 6~12dp,比官方小 8 倍,所以"转半天不动、转快了反而显得慢"。
+            // 和参考应用(词典/QQ/Via,都是 View 体系)保持一致:用平台的滚动因子把"格"换算成像素。
+            // RecyclerView/ScrollView 收到 ACTION_SCROLL 时就是这么算的,所以它们的表冠手感是对的。
             val axis = ev.getAxisValue(MotionEvent.AXIS_SCROLL)
-            val raw = if (kotlin.math.abs(axis) > 0.01f) axis else -ev.getAxisValue(MotionEvent.AXIS_VSCROLL)
-            if (kotlin.math.abs(raw) > 0.01f) {
-                val sign = if (raw > 0) 1 else -1
-                // 不看 magnitude:某些固件"慢转的数值反而大",按数值缩放会导致快慢颠倒。
-                // 固定"一次事件≈一格≈34dp",快慢完全由事件密度(转了多少格)决定,松手后还有惯性滑行。
-                val stepPx = 34f * resources.displayMetrics.density
-                RotaryBus.emit((sign * stepPx).toInt())
+            val v = if (kotlin.math.abs(axis) > 0.001f) axis else -ev.getAxisValue(MotionEvent.AXIS_VSCROLL)
+            if (kotlin.math.abs(v) > 0.001f) {
+                val factor = android.view.ViewConfiguration.get(this).scaledVerticalScrollFactor
+                RotaryBus.emit((v * factor).toInt())
             }
             return true
         }

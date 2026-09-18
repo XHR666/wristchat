@@ -192,9 +192,19 @@ class SessionStore(private val context: Context) {
     fun totalSizeBytes(): Long =
         dir.listFiles()?.sumOf { it.length() } ?: 0L
 
+    /** 会话数量上限:超出后删除最旧的(默认 20) */
+    fun enforceLimit(max: Int = 20) {
+        try {
+            val files = dir.listFiles()?.filter { it.name.endsWith(".json") && !it.name.endsWith(".tmp") } ?: return
+            if (files.size <= max) return
+            files.sortedBy { it.lastModified() }.take(files.size - max).forEach { it.delete() }
+        } catch (_: Exception) {}
+    }
+
     fun create(title: String = "新会话"): Session {
         val s = Session(id = UUID.randomUUID().toString().replace("-", "").take(16), title = title, createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis())
         save(s)
+        enforceLimit()
         return s
     }
 

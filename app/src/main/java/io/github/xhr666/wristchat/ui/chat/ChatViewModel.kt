@@ -64,6 +64,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val sessions: LiveData<List<SessionStore.SessionBrief>> = _sessions
 
     init {
+        _draft.value = io.github.xhr666.wristchat.data.DraftStore.load(app)
         _quickInputs.value = settings.getQuickInputs()
         SkillStoreProviderInject.refresh(skillStore)
         // 冷启动只解析最近一个会话文件(其余在进入负一屏/设置页时异步加载),避免首帧卡顿
@@ -109,7 +110,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (_session.value?.id == id) _title.value = title
     }
 
-    fun setDraft(text: String) { _draft.value = text }
+    private var draftSaveJob: kotlinx.coroutines.Job? = null
+
+    /** 输入即存(400ms 防抖),关后台/重启也能恢复未发送内容 */
+    fun setDraft(text: String) {
+        _draft.value = text
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.delay(400)
+            io.github.xhr666.wristchat.data.DraftStore.save(getApplication(), text)
+        }
+    }
+
+    /** 立即落盘(返回/发送时调用) */
+    fun saveDraftNow() {
+        draftSaveJob?.cancel()
+        val t = _draft.value ?: ""
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            io.github.xhr666.wristchat.data.DraftStore.save(getApplication(), t)
+        }
+    }
 
     /** 图片上传辅助 */
     fun currentSessionId(): String? = _session.value?.id
@@ -120,7 +140,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         settings.model = io.github.xhr666.wristchat.data.ChatRepository.VISION_MODEL
     }
 
-    fun clearDraft() { _draft.value = "" }
+    fun clearDraft() {
+        _draft.value = ""
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            io.github.xhr666.wristchat.data.DraftStore.clear(getApplication())
+        }
+    }
 
     fun toggleQuickPanel() {
         _quickInputs.value = settings.getQuickInputs()

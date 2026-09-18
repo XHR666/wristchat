@@ -27,6 +27,11 @@ fun BalanceScreen(settings: SettingsStore) {
     val vm: BalanceViewModel = viewModel(factory = BalanceViewModelFactory(app))
     val ui by vm.ui.observeAsState()
     val updated by vm.updatedAt.observeAsState("")
+    // 实时读秒:每秒刷新一次"更新于 N 秒前"
+    var tick by remember { mutableStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) { kotlinx.coroutines.delay(1000); tick = System.currentTimeMillis() }
+    }
     val listState = rememberLazyListState()
     val c = LocalWrist.current
 
@@ -37,7 +42,8 @@ fun BalanceScreen(settings: SettingsStore) {
     }
 
     settings.rev   // 订阅设置变化,服务商/模型切换后立即刷新本页文案
-    ScreenScaffold(title = "余额", actions = { SmallAction("⟳") { vm.refresh() } },
+    ScreenScaffold(title = "余额", showTimeAlways = true,
+        actions = { SmallAction("⟳") { vm.refresh() } },
         scrollIndicator = listState) {
         LazyColumn(
             state = listState,
@@ -72,7 +78,23 @@ fun BalanceScreen(settings: SettingsStore) {
             item {
                 Text(ui?.hint ?: "", color = c.hint, fontSize = 10.sp, lineHeight = 14.sp,
                     modifier = Modifier.padding(top = 8.dp))
-                Text("更新于 $updated", color = c.hint, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
+                val ago = remember(updated, tick) {
+                    runCatching {
+                        val t = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).parse(updated)?.time
+                        if (t == null) ""
+                        else {
+                            val now = java.util.Calendar.getInstance()
+                            val then = java.util.Calendar.getInstance().apply {
+                                timeInMillis = t
+                                set(java.util.Calendar.YEAR, now.get(java.util.Calendar.YEAR))
+                                set(java.util.Calendar.DAY_OF_YEAR, now.get(java.util.Calendar.DAY_OF_YEAR))
+                            }
+                            val sec = ((now.timeInMillis - then.timeInMillis) / 1000).coerceAtLeast(0)
+                            "更新于 $updated(${sec}秒前)"
+                        }
+                    }.getOrDefault("")
+                }
+                Text(ago, color = c.hint, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
             }
         }
         RotaryList(listState, enabled = LocalCurrentPage.current == 2)

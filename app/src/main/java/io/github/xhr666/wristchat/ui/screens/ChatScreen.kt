@@ -190,8 +190,23 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
                 if (m.content.isNotBlank() || m.img == null) MsgContent(m.content, isUser, markwon)
             }
         }
-        if (!isUser && (m.cost > 0 || (m.usage?.totalTokens ?: 0) > 0)) {
-            Text("tokens:${m.usage?.totalTokens ?: 0} · ¥%.4f".format(m.cost), color = c.hint, fontSize = 9.sp)
+        if (!isUser) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (m.cost > 0 || (m.usage?.totalTokens ?: 0) > 0) {
+                    Text("tokens:${m.usage?.totalTokens ?: 0} · ¥%.4f".format(m.cost), color = c.hint, fontSize = 9.sp)
+                }
+                val ctx = LocalContext.current
+                Text("  复制", color = c.accent, fontSize = 10.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable {
+                            val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("reply", m.content))
+                            android.widget.Toast.makeText(ctx, "已复制", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 4.dp, vertical = 2.dp))
+            }
         }
     }
 }
@@ -245,53 +260,55 @@ fun MsgContent(text: String, isUser: Boolean, markwon: Markwon) {
 private fun Color.toArgbCompat(): Int = android.graphics.Color.argb(
     (alpha * 255).toInt(), (red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt())
 
-/** 全屏输入页:自动唤输入法,关闭不发送 */
+/**
+ * 全屏输入页:改用 View 体系的原生 EditText(AndroidView)。
+ * 参考应用(词典 / Via / QQ)的输入法表现正常,因为它们用的是 View 的 EditText,
+ * 而 Compose 的 TextField 在这台表的输入法上会出现"删除后候选/预览不同步"的问题。
+ * 同时支持:实时保存草稿、系统剪贴板粘贴、图片附件。
+ */
 @Composable
 fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val c = LocalWrist.current
-    // TextFieldValue:输入法组合区与文本状态同步(修删除后 IME 预览不刷新)
-    var tv by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(vm.draft.value ?: "")) }
     var attachName by remember { mutableStateOf<String?>(null) }
     var attachThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var visionAsk by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val keyboard = LocalSoftwareKeyboardController.current
-    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
-    // 组合期不写全局状态:SideEffect 提交后再锁定,退出时 DisposableEffect 解锁
+    var edit by remember { mutableStateOf<android.widget.EditText?>(null) }
     SideEffect { PagerLock.locked = true }
     DisposableEffect(Unit) { onDispose { PagerLock.locked = false } }
 
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(200)
-        focusRequester.requestFocus()
-        keyboard?.show()
+    fun body(): String = edit?.text?.toString() ?: vm.draft.value.orEmpty()
+    fun closeWithSave() { vm.setDraft(body()); vm.saveDraftNow(); onClose() }
+
+    // 图片:优先用内置相册(集成在软件里,不调用系统选择器)
+    var galleryOpen by remember { mutableStateOf(false) }
+
+    if (galleryOpen) {
+        GalleryScreen(
+            onPick = { uri, file ->
+                galleryOpen = false
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val name = if (file != null)
+                        io.github.xhr666.wristchat.data.Attachments.importFromFile(ctx, file, vm.currentSessionId() ?: "s")
+                    else io.github.xhr666.wristchat.data.Attachments.importFromUri(ctx, uri!!, vm.currentSessionId() ?: "s")
+                    val thumb = name?.let { io.github.xhr666.wristchat.data.Attachments.loadThumb(ctx, it) }
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        if (name == null) hint = "图片读取失败" else { attachName = name; attachThumb = thumb }
+                    }
+                }
+            },
+            onBack = { galleryOpen = false },
+        )
+        return
     }
 
-    // 图片选择:系统相册/文件选择器;无可用选择器时给提示
-    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            hint = null
-            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                val name = io.github.xhr666.wristchat.data.Attachments
-                    .importFromUri(ctx, uri, vm.currentSessionId() ?: "s")
-                val thumb = name?.let { io.github.xhr666.wristchat.data.Attachments.loadThumb(ctx, it) }
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    if (name == null) hint = "图片读取失败或不支持的格式"
-                    else { attachName = name; attachThumb = thumb; tv = androidx.compose.ui.text.input.TextFieldValue("") }
-                }
-            }
-        }
-    }
-    fun launchPicker() {
+    fun launchGallery() {
         if (!vm.providerIsDeepSeek()) { hint = "图片仅 DeepSeek 支持(需 deepseek-flash)"; return }
         if (!vm.modelSupportsVision()) { visionAsk = true; return }
         hint = null
-        try { picker.launch("image/*") }
-        catch (e: Exception) { hint = "没有可用的图片选择器" }
+        galleryOpen = true
     }
 
     Column(
@@ -299,28 +316,40 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
             .fillMaxSize()
             .background(c.bg)
             .imePadding()
-            .padding(10.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SmallAction("‹") { vm.setDraft(tv.text); keyboard?.hide(); onClose() }
+            SmallAction("‹") { closeWithSave() }
             Text(if (attachName != null) "发送图片" else "输入消息", color = c.text, fontSize = 14.sp,
                 modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            SmallAction("🖼") { launchPicker() }
+            SmallAction("📋") {
+                // 粘贴:读系统剪贴板
+                val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val txt = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
+                if (txt.isBlank()) { hint = "剪贴板是空的" } else {
+                    val e = edit
+                    if (e != null) {
+                        val s0 = e.selectionStart.coerceAtLeast(0)
+                        e.text.replace(s0, e.selectionEnd.coerceAtLeast(s0), txt)
+                        e.setSelection((s0 + txt.length).coerceAtMost(e.text.length))
+                    }
+                    hint = null
+                }
+            }
+            SmallAction("🖼") { launchGallery() }
             SmallAction("➤") {
-                vm.setDraft(tv.text)
-                vm.send(tv.text, attachName)
-                keyboard?.hide()
+                val t = body()
+                vm.setDraft(t)
+                vm.send(t, attachName)
+                vm.clearDraft()
                 onClose()
             }
         }
         attachThumb?.let { bmp ->
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
                 androidx.compose.foundation.Image(
-                    bitmap = bmp.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+                    bitmap = bmp.asImageBitmap(), contentDescription = null,
+                    modifier = Modifier.size(42.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
                 )
                 Text("已选图片(JPEG 压缩后上传)", color = c.hint, fontSize = 11.sp,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
@@ -328,14 +357,44 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
             }
         }
         hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp)) }
-        TextField(
-            value = tv, onValueChange = { tv = it },   // 不再拦截/改写:任何拦截都会让输入法组合区状态失步
-            modifier = Modifier
-                .fillMaxSize()
-                .focusRequester(focusRequester),
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = c.text),
-            placeholder = { Text(if (attachName != null) "补充说明(可留空)…" else "在此输入…", color = c.hint) },
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { cx ->
+                android.widget.EditText(cx).apply {
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+                    inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                        android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                        android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                    imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                        android.view.inputmethod.EditorInfo.IME_ACTION_NONE
+                    setText(vm.draft.value.orEmpty())
+                    setSelection(text.length)
+                    textSize = 16f
+                    setTextColor(c.text.toArgbCompat())
+                    setHintTextColor(c.hint.toArgbCompat())
+                    hint = "在此输入…"
+                    gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                    background = null
+                    setPadding(8, 4, 8, 4)
+                    addTextChangedListener(object : android.text.TextWatcher {
+                        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
+                        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
+                        override fun afterTextChanged(s: android.text.Editable?) { vm.setDraft(s?.toString().orEmpty()) }
+                    })
+                    edit = this
+                    requestFocus()
+                }
+            },
         )
+    }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(200)
+        edit?.requestFocus()
+        val imm = ctx.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as android.view.inputmethod.InputMethodManager
+        imm.showSoftInput(edit, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
     }
 
     if (visionAsk) {
@@ -343,7 +402,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
             okText = "切换", onOk = {
                 vm.switchToVisionModel()
                 visionAsk = false
-                try { picker.launch("image/*") } catch (e: Exception) { hint = "没有可用的图片选择器" }
+                galleryOpen = true
             }, onCancel = { visionAsk = false })
     }
 }

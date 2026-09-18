@@ -90,7 +90,7 @@ fun RotaryList(listState: LazyListState, enabled: Boolean) {
             val d = RotaryBus.drain()
             if (d != 0) {
                 flingJob?.cancel(); flingJob = null          // 新的转动立刻接管惯性
-                val px = d.coerceIn(-240, 240)
+                val px = d.coerceIn(-1200, 1200)
                 listState.dispatchRawDelta(px.toFloat())
                 velocity = 0.65f * velocity + 0.35f * (px / 16.7f)
             } else if (velocity != 0f && RotaryBus.idle()) {

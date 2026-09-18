@@ -54,6 +54,7 @@ object Attachments {
 
             val name = "${sessionId}_${System.currentTimeMillis()}.jpg"
             File(dir(ctx), name).writeBytes(out.toByteArray())
+            enforceLimit(ctx)
             name
         } catch (e: Exception) { null }
     }
@@ -98,5 +99,48 @@ object Attachments {
     /** 清空全部附件 */
     fun clearAll(ctx: Context) {
         try { dir(ctx).listFiles()?.forEach { it.delete() } } catch (e: Exception) {}
+    }
+
+    /** 从本地文件导入(内置相册里 App 目录的图片) */
+    fun importFromFile(ctx: Context, src: File, sessionId: String): String? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(src.absolutePath, bounds)
+            if (bounds.outWidth <= 0) return null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_SIDE * 2 && sample < 32) sample *= 2
+            val full = BitmapFactory.decodeFile(src.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+                ?: return null
+            val scaled = if (full.width > MAX_SIDE || full.height > MAX_SIDE) {
+                val sc = MAX_SIDE.toFloat() / maxOf(full.width, full.height)
+                val s2 = Bitmap.createScaledBitmap(full, (full.width * sc).toInt().coerceAtLeast(1),
+                    (full.height * sc).toInt().coerceAtLeast(1), true)
+                full.recycle(); s2
+            } else full
+            val out = ByteArrayOutputStream()
+            val flat = Bitmap.createBitmap(scaled.width, scaled.height, Bitmap.Config.ARGB_8888)
+            Canvas(flat).apply { drawColor(Color.WHITE); drawBitmap(scaled, 0f, 0f, null) }
+            flat.compress(Bitmap.CompressFormat.JPEG, JPEG_Q, out)
+            scaled.recycle(); flat.recycle()
+            val name = "${sessionId}_${System.currentTimeMillis()}.jpg"
+            File(dir(ctx), name).writeBytes(out.toByteArray())
+            enforceLimit(ctx)
+            name
+        } catch (e: Exception) { null }
+    }
+
+    /** 附件总量上限:超出后按时间删最旧的(默认 40 个文件 / 30MB) */
+    fun enforceLimit(ctx: Context, maxFiles: Int = 40, maxBytes: Long = 30L * 1024 * 1024) {
+        try {
+            val files = dir(ctx).listFiles()?.filter { it.isFile }?.sortedBy { it.lastModified() } ?: return
+            var total = files.sumOf { it.length() }
+            var count = files.size
+            for (f in files) {
+                if (count <= maxFiles && total <= maxBytes) break
+                total -= f.length()
+                count--
+                f.delete()
+            }
+        } catch (_: Exception) {}
     }
 }
