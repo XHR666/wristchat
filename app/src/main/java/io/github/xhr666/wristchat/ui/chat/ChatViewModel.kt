@@ -250,21 +250,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _session.value = s
     }
 
-    fun send(text: String, imageFile: String? = null) {
+    /** @return true 表示已受理(消息已入队);false 表示被拒绝(此时调用方要保留草稿) */
+    fun send(text: String, imageFile: String? = null): Boolean {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() && imageFile == null) return
-        if (_sending.value == true) return
-        if (trimmed.isNotEmpty() && handleSlash(trimmed)) { clearDraft(); return }
+        if (trimmed.isEmpty() && imageFile == null) return false
+        if (_sending.value == true) return false
+        if (trimmed.isNotEmpty() && handleSlash(trimmed)) { clearDraft(); return true }
 
-        val s = _session.value ?: return
+        val s = _session.value ?: return false
         val ts = System.currentTimeMillis()
         val userMsg = ChatMessage(role = "user", content = trimmed, img = imageFile, ts = ts)
         // 先落库(即使请求失败,用户消息也保留)
         s.messages.add(userMsg)
         sessionStore.save(s)
         _session.value = s
-        if (trimmed.isEmpty()) _draft.value = ""
-        else clearDraft()
+        clearDraft()   // 纯图片消息也要清掉草稿文件,否则下次启动会把旧文本恢复出来
         _sending.value = true
 
         viewModelScope.launch {
@@ -305,6 +305,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _sending.value = false
             refreshDetails()
         }
+        return true
     }
 
     /** 估算 token:1 中文字≈0.6,1 英文≈0.3(官方 token_usage 文档) */

@@ -340,8 +340,10 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
             SmallAction("➤") {
                 val t = body()
                 vm.setDraft(t)
-                vm.send(t, attachName)
-                vm.clearDraft()
+                // send() 成功时内部会清草稿;失败(空内容/上一条还在发)时保留草稿,不能丢字
+                val accepted = vm.send(t, attachName)
+                if (accepted) vm.clearDraft()
+                else vm.saveDraftNow()
                 onClose()
             }
         }
@@ -368,6 +370,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
                         android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                         android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                     imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                        android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN or
                         android.view.inputmethod.EditorInfo.IME_ACTION_NONE
                     setText(vm.draft.value.orEmpty())
                     setSelection(text.length)

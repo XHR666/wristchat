@@ -73,4 +73,35 @@ object Installer {
             InstallerResult.Fail(e.message ?: "安装失败")
         }
     }
+
+    /**
+     * 用系统安装器界面安装(与商店类应用一致的做法):
+     * ACTION_VIEW + FileProvider 的 content:// URI → 系统弹出安装确认界面。
+     * 失败再退到 ACTION_INSTALL_PACKAGE,最后才是 PackageInstaller 静默会话。
+     * @return null 表示已成功拉起安装器;否则返回错误文案
+     */
+    fun launchSystemInstaller(ctx: Context, apk: File): String? {
+        return try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                ctx, "${ctx.packageName}.fileprovider", apk)
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try { ctx.startActivity(view); return null } catch (_: Exception) {}
+            val legacy = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                data = uri
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try { ctx.startActivity(legacy); return null } catch (_: Exception) {}
+            // 兜底:会话安装(部分机型没有安装器 Activity)
+            when (val r = submit(ctx, apk)) {
+                is InstallerResult.Submitted -> "已通过系统安装服务提交;若没有弹窗,请到设置里再点一次"
+                is InstallerResult.Fail -> "安装失败:${r.msg}"
+                is InstallerResult.NeedPermission -> "需要先允许安装未知应用"
+            }
+        } catch (e: Exception) { "安装失败:${e.message}" }
+    }
 }

@@ -309,63 +309,61 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
     item {
         val ctx = LocalContext.current
         val scope = rememberCoroutineScope()
-        var prog by remember { mutableStateOf<Int?>(null) }              // null=无弹窗; -1=连接/安装中
+        var prog by remember { mutableStateOf<Int?>(null) }                  // null=无弹窗; -1=进行中
         var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-        var pendingApk by remember { mutableStateOf<java.io.File?>(null) }  // 等授权后自动继续安装
+        var pendingApk by remember { mutableStateOf<java.io.File?>(null) }    // 等授权后自动安装
         var resultTitle by remember { mutableStateOf("更新") }
-        var progLabel by remember { mutableStateOf<String?>(null) }          // 非空=自定义进度文案(安装中)
-        var cachedKey by remember { mutableStateOf(0) }                      // 下载完成后刷新"已下载包"卡片
+        var progLabel by remember { mutableStateOf<String?>(null) }
+        var cachedKey by remember { mutableStateOf(0) }
+        var autoInstall by remember { mutableStateOf<java.io.File?>(null) }
 
-        fun startInstall(file: java.io.File) {
-            progLabel = "正在提交安装…"
+        // 授权页返回 → 自动继续安装(不管用户是右滑返回还是返回键)
+        val permLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+        ) {
+            val f = pendingApk
+            pendingApk = null
+            if (f != null) {
+                if (io.github.xhr666.wristchat.data.Installer.canInstall(ctx)) autoInstall = f
+                else d.text("需要授权", "仍未允许安装未知应用;开启后再点一次“安装已下载的包”")
+            }
+        }
+
+        fun launchInstall(file: java.io.File) {
+            progLabel = "正在打开系统安装器…"
             prog = -1
             job = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                // 任何异常都要落地成结果,避免"卡在安装中没反应"
-                val out = try { doInstall(ctx, file) } catch (e: Exception) { InstallOutcome.Failed(e.message ?: "安装异常") }
+                val out = try { doInstall(ctx, file) } catch (e: Exception) {
+                    InstallOutcome.Failed(e.message ?: "安装异常")
+                }
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     prog = null; progLabel = null
                     when (out) {
-                        is InstallOutcome.Done -> d.text(resultTitle, out.text)
+                        is InstallOutcome.Done -> { cachedKey++; d.text(resultTitle, out.text) }
                         is InstallOutcome.Failed -> d.text("安装失败", out.text)
                         is InstallOutcome.NeedPermission -> {
+                            // 没权限:记下来,等授权页返回后自动继续
                             pendingApk = out.apk
-                            d.text("需要授权", "请允许“安装未知应用”;开启后返回会自动继续安装")
+                            d.confirm("需要授权",
+                                "安装需要允许“安装未知应用”。\n点“去设置”开启后返回,会自动打开系统安装器。",
+                                ok = "去设置") {
+                                try {
+                                    permLauncher.launch(android.content.Intent(
+                                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        android.net.Uri.parse("package:${ctx.packageName}")))
+                                } catch (e: Exception) { d.text("打不开设置", e.message ?: "") }
+                            }
                         }
                     }
                 }
             }
         }
 
-        fun showOutcome(out: InstallOutcome) {
-            cachedKey++   // 下载/安装结束后刷新"已下载的包"卡片
-            when (out) {
-                is InstallOutcome.Done -> d.text(resultTitle, out.text)
-                is InstallOutcome.Failed -> d.text("更新失败", out.text)
-                is InstallOutcome.NeedPermission -> {
-                    pendingApk = out.apk
-                    d.confirm("需要授权",
-                        "安装更新需要允许“安装未知应用”。\n点“去设置”开启后返回,会自动继续安装。", ok = "去设置") {
-                        try {
-                            ctx.startActivity(android.content.Intent(
-                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                android.net.Uri.parse("package:${ctx.packageName}")))
-                        } catch (e: Exception) { d.text("打不开设置", e.message ?: "") }
-                    }
-                }
-            }
-        }
-
-        // 授权页返回检测:不管用户怎么返回(右滑/返回键),能装了就自动继续安装
-        LaunchedEffect(pendingApk) {
-            val f = pendingApk ?: return@LaunchedEffect
-            repeat(120) {
-                kotlinx.coroutines.delay(700)
-                if (io.github.xhr666.wristchat.data.Installer.canInstall(ctx)) {
-                    pendingApk = null
-                    startInstall(f)
-                    return@LaunchedEffect
-                }
-            }
+        // 需要安装时统一从这里发起(授权返回后也会走这里)
+        LaunchedEffect(autoInstall) {
+            val f = autoInstall ?: return@LaunchedEffect
+            autoInstall = null
+            launchInstall(f)
         }
 
         WCard("检查更新", "") {
@@ -384,6 +382,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
                                     "当前:${s.versionName} → ${r.info.tagName}\n${shortNote(r.info.body)}",
                                     ok = "下载更新") {
                                     io.github.xhr666.wristchat.data.AppLog.i("upd", "user taps download")
+                                    progLabel = null
                                     prog = -1
                                     job = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                                         try {
@@ -394,7 +393,12 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
                                             }
                                             io.github.xhr666.wristchat.data.AppLog.i("upd", "outcome: $out")
                                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                prog = null; showOutcome(out)
+                                                prog = null
+                                                when (out) {
+                                                    is InstallOutcome.Done -> { cachedKey++; d.text(resultTitle, out.text) }
+                                                    is InstallOutcome.Failed -> d.text("更新失败", out.text)
+                                                    is InstallOutcome.NeedPermission -> { pendingApk = out.apk; launchInstall(out.apk) }
+                                                }
                                             }
                                         } catch (e: kotlinx.coroutines.CancellationException) {
                                             io.github.xhr666.wristchat.data.AppLog.i("upd", "cancelled by user")
@@ -425,7 +429,18 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
                 }
             }
         }
-        // 下载进度:统一样式弹窗;只有“取消”能取消(点外部不误取消)
+        // 已下载但没装上的包:补救入口(与上面的安装/授权流程共用)
+        val cachedApk = remember(cachedKey) {
+            java.io.File(ctx.cacheDir, "updates").listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".apk") }
+                ?.maxByOrNull { it.lastModified() }
+        }
+        WCard("安装已下载的包",
+            cachedApk?.let { "${it.name} · ${it.length() / 1024 / 1024}MB" } ?: "暂无(先点上面的检查更新)") {
+            val f = cachedApk
+            if (f == null) { d.text("安装", "没有已下载的安装包"); return@WCard }
+            d.confirm("安装", "用系统安装器安装已下载的\n${f.name}?", ok = "安装") { launchInstall(f) }
+        }
         prog?.let { p ->
             CompactDialog(
                 title = if (progLabel != null) "安装更新" else "下载更新",
@@ -436,18 +451,6 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
                 Text(progLabel ?: (if (p < 0) "连接中…" else "下载中 $p%"),
                     color = LocalWrist.current.text, fontSize = 13.sp)
             }
-        }
-        // 已下载但没装上的包:补救入口(与上面共用安装/授权逻辑)
-        val cachedApk = remember(cachedKey) {
-            java.io.File(ctx.cacheDir, "updates").listFiles()
-                ?.filter { it.isFile && it.name.endsWith(".apk") }
-                ?.maxByOrNull { it.lastModified() }
-        }
-        WCard("安装已下载的包",
-            cachedApk?.let { "${it.name} · ${it.length() / 1024 / 1024}MB" } ?: "暂无(先点上面的检查更新)") {
-            val f = cachedApk
-            if (f == null) { d.text("安装", "没有已下载的安装包"); return@WCard }
-            d.confirm("安装", "直接安装已下载的\n${f.name}?", ok = "安装") { startInstall(f) }
         }
     }
     item { WCard("手机同步(二维码)", "") { openSync() } }

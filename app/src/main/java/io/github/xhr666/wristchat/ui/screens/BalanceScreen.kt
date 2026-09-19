@@ -27,6 +27,7 @@ fun BalanceScreen(settings: SettingsStore) {
     val vm: BalanceViewModel = viewModel(factory = BalanceViewModelFactory(app))
     val ui by vm.ui.observeAsState()
     val updated by vm.updatedAt.observeAsState("")
+    val updatedMillis by vm.updatedAtMillis.observeAsState(0L)
     // 实时读秒:每秒刷新一次"更新于 N 秒前"
     var tick by remember { mutableStateOf(0L) }
     LaunchedEffect(Unit) {
@@ -78,21 +79,9 @@ fun BalanceScreen(settings: SettingsStore) {
             item {
                 Text(ui?.hint ?: "", color = c.hint, fontSize = 10.sp, lineHeight = 14.sp,
                     modifier = Modifier.padding(top = 8.dp))
-                val ago = remember(updated, tick) {
-                    runCatching {
-                        val t = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).parse(updated)?.time
-                        if (t == null) ""
-                        else {
-                            val now = java.util.Calendar.getInstance()
-                            val then = java.util.Calendar.getInstance().apply {
-                                timeInMillis = t
-                                set(java.util.Calendar.YEAR, now.get(java.util.Calendar.YEAR))
-                                set(java.util.Calendar.DAY_OF_YEAR, now.get(java.util.Calendar.DAY_OF_YEAR))
-                            }
-                            val sec = ((now.timeInMillis - then.timeInMillis) / 1000).coerceAtLeast(0)
-                            "更新于 $updated(${sec}秒前)"
-                        }
-                    }.getOrDefault("")
+                val ago = if (updatedMillis <= 0L) "" else {
+                    val sec = ((tick - updatedMillis) / 1000).coerceAtLeast(0)
+                    "更新于 $updated(${sec}秒前)"
                 }
                 Text(ago, color = c.hint, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
             }

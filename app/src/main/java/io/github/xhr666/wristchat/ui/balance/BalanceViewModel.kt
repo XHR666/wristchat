@@ -46,6 +46,10 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
     private val _updatedAt = MutableLiveData("")
     val updatedAt: LiveData<String> = _updatedAt
 
+    /** 上次刷新成功的时间戳(用于"N 秒前"实时读数,避免解析字符串跨天算错) */
+    private val _updatedAtMillis = MutableLiveData(0L)
+    val updatedAtMillis: LiveData<Long> = _updatedAtMillis
+
     init {
         refresh()
     }
@@ -88,6 +92,7 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
             )
             _ui.postValue(ui)
             _updatedAt.postValue(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()))
+            _updatedAtMillis.postValue(System.currentTimeMillis())
         }
     }
 

@@ -44,6 +44,23 @@ fun GalleryScreen(onPick: (Uri?, File?) -> Unit, onBack: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var nonce by remember { mutableStateOf(0) }
     var sizeInfo by remember { mutableStateOf("") }
+    var needPerm by remember { mutableStateOf(false) }
+    // 读系统媒体库需要权限:Android 13+ 是 READ_MEDIA_IMAGES,12 及以下是 READ_EXTERNAL_STORAGE
+    val permName = remember {
+        if (android.os.Build.VERSION.SDK_INT >= 33) "android.permission.READ_MEDIA_IMAGES"
+        else android.Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+    var granted by remember {
+        mutableStateOf(ctx.checkSelfPermission(permName) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+    }
+    val permLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { ok ->
+        granted = ok
+        needPerm = !ok
+        nonce++
+    }
+    LaunchedEffect(Unit) { if (!granted) permLauncher.launch(permName) }
 
     suspend fun scan(): List<GalleryItem> = withContext(Dispatchers.IO) {
         val out = mutableListOf<GalleryItem>()
@@ -51,8 +68,8 @@ fun GalleryScreen(onPick: (Uri?, File?) -> Unit, onBack: () -> Unit) {
         val dir = File(ctx.filesDir, "images").apply { mkdirs() }
         dir.listFiles()?.filter { it.isFile && it.name.matches(Regex("(?i).*\\.(jpg|jpeg|png|webp|gif)$")) }
             ?.forEach { out.add(GalleryItem(null, it, it.lastModified(), it.name)) }
-        // ② 系统媒体库
-        runCatching {
+        // ② 系统媒体库(无权限时只能看到 App 自己的目录)
+        if (granted) runCatching {
             val proj = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.DATE_ADDED)
             ctx.contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj, null, null,
@@ -92,7 +109,14 @@ fun GalleryScreen(onPick: (Uri?, File?) -> Unit, onBack: () -> Unit) {
             actions = { SmallAction("⟳") { nonce++ } },
             onHeaderSwipeBack = onBack,
         ) {
-            if (loading) {
+            if (needPerm && items.isEmpty()) {
+                Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("需要「读取照片」权限才能显示手表里的截图/照片", color = c.hint, fontSize = 11.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Spacer(Modifier.height(8.dp))
+                    SmallAction("去授权") { permLauncher.launch(permName) }
+                }
+            } else if (loading) {
                 Text("扫描中…", color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
             } else if (items.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

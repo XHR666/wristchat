@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.wear.compose.foundation.CurvedLayout
 import androidx.wear.compose.material.curvedText
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -67,7 +68,7 @@ object RotaryBus {
     // 累积式:表冠快速旋转时事件非常密集,原实现用 SharedFlow 缓冲(16)溢出即丢事件,
     // 于是"转得快反而走得慢"。改为累加 + 每帧消费一次,快转不丢步。
     private val acc = java.util.concurrent.atomic.AtomicInteger(0)
-    private const val LIMIT = 900
+    private const val LIMIT = 3000
     @Volatile private var lastEventAt = 0L
     fun emit(delta: Int) {
         val v = acc.addAndGet(delta)
@@ -400,6 +401,82 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
     }
 }
 
+/**
+ * 原生 EditText 输入框(AndroidView)。
+ * 针对手表自带输入法(搜狗手表输入法 com.sogou.ime.wear,targetSdk 28)适配:
+ *  - IME_FLAG_NO_EXTRACT_UI + IME_FLAG_NO_FULLSCREEN:禁止"全屏编辑/提取模式",键盘内联贴在下方
+ *  - 单行/多行、密码类型分别设置 inputType
+ *  - 不用 Compose TextField:那套在这台表的输入法上会出现"删除后候选/预览不同步"
+ */
+@Composable
+fun NativeInput(
+    initial: String,
+    password: Boolean = false,
+    multiline: Boolean = false,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    maxHeight: Dp = 150.dp,
+    requestFocusOnStart: Boolean = false,
+) {
+    val c = LocalWrist.current
+    val ctx = LocalContext.current
+    var edit by remember { mutableStateOf<android.widget.EditText?>(null) }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .heightIn(max = maxHeight)
+            .clip(RoundedCornerShape(10.dp))
+            .background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(10.dp))
+            .padding(2.dp),
+    ) {
+        androidx.compose.ui.viewinterop.AndroidView(
+            modifier = Modifier.fillMaxWidth(),
+            factory = { cx ->
+                android.widget.EditText(cx).apply {
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+                    inputType = if (password) {
+                        android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    } else if (multiline) {
+                        android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    } else {
+                        android.text.InputType.TYPE_CLASS_TEXT
+                    }
+                    imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                        android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN or
+                        android.view.inputmethod.EditorInfo.IME_ACTION_NONE
+                    setSingleLine(!multiline)
+                    setText(initial)
+                    setSelection(text.length)
+                    textSize = 15f
+                    setTextColor(c.text.toArgb())
+                    setHintTextColor(c.hint.toArgb())
+                    background = null
+                    setPadding(6, 6, 6, 6)
+                    addTextChangedListener(object : android.text.TextWatcher {
+                        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
+                        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
+                        override fun afterTextChanged(s: android.text.Editable?) { onValueChange(s?.toString().orEmpty()) }
+                    })
+                    edit = this
+                    if (requestFocusOnStart) requestFocus()
+                }
+            },
+        )
+    }
+    LaunchedEffect(Unit) {
+        if (requestFocusOnStart) {
+            kotlinx.coroutines.delay(150)
+            edit?.requestFocus()
+            val imm = ctx.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(edit, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+}
+
 @Composable
 fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     val c = LocalWrist.current
@@ -475,16 +552,11 @@ fun WChoice(title: String, items: List<String>, checked: Int, onPick: (Int) -> U
 @Composable
 fun WInput(title: String, initial: String, password: Boolean = false, multiline: Boolean = false,
            okText: String = "保存", onOk: (String) -> Unit, onCancel: () -> Unit = {}) {
-    var v by remember(initial, title) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial)) }
+    var v by remember(initial, title) { mutableStateOf(initial) }
     CompactDialog(title = title, onDismiss = onCancel,
-        confirmText = okText, onConfirm = { onOk(v.text) }, dismissText = "取消") {
-        androidx.compose.material3.OutlinedTextField(
-            value = v,
-            onValueChange = { v = it },
-            singleLine = !multiline,
-            modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
-            visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        )
+        confirmText = okText, onConfirm = { onOk(v) }, dismissText = "取消") {
+        NativeInput(initial = initial, password = password, multiline = multiline,
+            onValueChange = { v = it }, requestFocusOnStart = true)
     }
 }
 

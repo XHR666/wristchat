@@ -54,11 +54,10 @@ suspend fun installRelease(
 
 suspend fun doInstall(ctx: Context, target: java.io.File): InstallOutcome {
     if (!Installer.canInstall(ctx)) return InstallOutcome.NeedPermission(target)
-    return when (val r = Installer.submit(ctx, target)) {
-        is InstallerResult.NeedPermission -> InstallOutcome.NeedPermission(target)
-        is InstallerResult.Submitted -> InstallOutcome.Done("已提交安装,请在系统弹窗里点“安装”")
-        is InstallerResult.Fail -> InstallOutcome.Failed("安装失败:${r.msg}")
-    }
+    // 走系统安装器界面(商店应用同款),用户能看到安装确认框
+    val err = Installer.launchSystemInstaller(ctx, target)
+    return if (err == null) InstallOutcome.Done("已打开系统安装器,请在手表上确认安装")
+    else InstallOutcome.Failed(err)
 }
 
 /** 更新弹窗里只显示简短说明:去 Markdown 标记,取前 3 行非空内容 */
