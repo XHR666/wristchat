@@ -107,9 +107,13 @@ fun GalleryScreen(onPickMany: (List<GalleryItem>) -> Unit, onBack: () -> Unit) {
     SwipeBackContainer(onBack = onBack) {
         ScreenScaffold(
             title = "相册" + if (sizeInfo.isNotEmpty()) " · $sizeInfo" else "",
-            actions = { SmallAction("⟳") { nonce++ } },
+            actions = {
+                SmallAction("⟳") { nonce++ }
+                SmallAction("‹") { onBack() }
+            },
             onHeaderSwipeBack = onBack,
         ) {
+            Column(Modifier.fillMaxSize()) {
             if (needPerm && items.isEmpty()) {
                 Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("需要「读取照片」权限才能显示手表里的截图/照片", color = c.hint, fontSize = 11.sp,
@@ -127,7 +131,8 @@ fun GalleryScreen(onPickMany: (List<GalleryItem>) -> Unit, onBack: () -> Unit) {
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                    // weight(1f):把剩余高度给网格,底部"完成"按钮才有位置(原来 fillMaxSize 会把它挤没)
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp),
                     contentPadding = PaddingValues(top = 6.dp, bottom = LocalRoundBottom.current),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -141,10 +146,12 @@ fun GalleryScreen(onPickMany: (List<GalleryItem>) -> Unit, onBack: () -> Unit) {
                 }
                 // 多选:底部"完成(N)"
                 if (selected.isNotEmpty()) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                    // 固定高度放底部居中:圆屏底部中间是可见的
+                    Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
                         SmallAction("完成(${selected.size})") { onPickMany(selected.toList()) }
                     }
                 }
+            }
             }
         }
     }

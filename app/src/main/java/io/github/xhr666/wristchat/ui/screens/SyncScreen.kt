@@ -21,6 +21,7 @@ import io.github.xhr666.wristchat.data.SkillStore
 import io.github.xhr666.wristchat.data.SyncServer
 import io.github.xhr666.wristchat.ui.LocalWrist
 import io.github.xhr666.wristchat.ui.SmallAction
+import io.github.xhr666.wristchat.ui.roundInset
 import io.github.xhr666.wristchat.ui.common.QrUtil
 import io.github.xhr666.wristchat.ui.settings.SettingsViewModel
 import android.content.ClipData
@@ -73,12 +74,16 @@ fun SyncOverlay(settings: SettingsStore, vm: SettingsViewModel, onClose: () -> U
         }
     }
 
+    // 圆屏:顶部返回键要按该高度的弦宽内缩,否则会落在圆外(看不到)
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
+    val w = maxWidth
+    val h = maxHeight
+    val topInset = roundInset(w, h, 10.dp + 20.dp)
     Column(
         Modifier
             .fillMaxSize()
-            .background(c.bg)
             .verticalScroll(androidx.compose.foundation.rememberScrollState())
-            .padding(horizontal = 22.dp, vertical = 10.dp)
+            .padding(start = topInset, end = topInset, top = 10.dp, bottom = 10.dp)
             .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -112,6 +117,7 @@ fun SyncOverlay(settings: SettingsStore, vm: SettingsViewModel, onClose: () -> U
             }) { Text("复制地址", color = c.accent, fontSize = 12.sp) }
             androidx.compose.material3.TextButton(onClick = { onClose() }) { Text("停止并返回", color = c.accent, fontSize = 12.sp) }
         }
+    }
     }
 }
 
@@ -148,4 +154,4 @@ private fun applyConfigJson(s: SettingsStore, vm: SettingsViewModel, body: Strin
         }
         "已保存"
     } catch (e: Exception) { "保存失败:${e.message}" }
-}
+    }
