@@ -354,10 +354,10 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         Modifier
             .fillMaxSize()
             .background(c.bg)
-            .imePadding()
             .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 工具栏固定高度:键盘再高也先保证返回/发送/粘贴/图片这几个键在屏幕上
+        Row(Modifier.fillMaxWidth().height(46.dp), verticalAlignment = Alignment.CenterVertically) {
             SmallAction("‹") { closeWithSave() }
             Text(if (attachNames.isNotEmpty()) "发送图片" else "输入消息", color = c.text, fontSize = 14.sp,
                 modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -376,15 +376,6 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
                 }
             }
             SmallAction("🖼") { launchGallery() }
-            if (attachNames.isNotEmpty()) {
-                SmallAction("OCR") {
-                    val p = vm.settings.promptOcr.replace("{images}", "(见附图)")
-                    vm.setDraft(p)
-                    vm.send(p, attachNames, modelOverride = vm.settings.modelOcr)
-                    vm.clearDraft()
-                    onClose()
-                }
-            }
             SmallAction("➤") {
                 val t = body()
                 vm.setDraft(t)
@@ -396,20 +387,28 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
             }
         }
         attachThumb?.let { bmp ->
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
+            Row(Modifier.fillMaxWidth().height(30.dp), verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.foundation.Image(
                     bitmap = bmp.asImageBitmap(), contentDescription = null,
                     modifier = Modifier.size(38.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
                 )
                 // 多张只显示数量,不堆叠
-                Text("已选 ${attachNames.size} 张图片(JPEG 压缩后上传)", color = c.hint, fontSize = 11.sp,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                Text("已选 ${attachNames.size} 张图片", color = c.hint, fontSize = 11.sp,
+                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp))
+                Text("OCR", color = c.accent, fontSize = 12.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable {
+                        val t = vm.settings.promptOcr
+                        vm.setDraft(t)
+                        vm.send(t, attachNames, modelOverride = vm.settings.modelOcr)
+                        vm.clearDraft()
+                        onClose()
+                    }.padding(horizontal = 6.dp, vertical = 2.dp))
                 SmallAction("✕") { attachNames = emptyList(); attachThumb = null }
             }
         }
-        hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp)) }
+        hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, maxLines = 1) }
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth().weight(1f),
             factory = { cx ->
                 android.widget.EditText(cx).apply {
                     layoutParams = android.view.ViewGroup.LayoutParams(
