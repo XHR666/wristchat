@@ -99,6 +99,7 @@ fun exportLogs(ctx: Context): String {
         "crash.log" to app.crashLogText(),
         "anr.log" to app.anrLogText(),
         "app.log" to io.github.xhr666.wristchat.data.AppLog.read(),
+        "sessions-check.txt" to sessionSelfCheck(ctx),   // 会话自检也一起保存
     )
     return try {
         val resolver = ctx.contentResolver

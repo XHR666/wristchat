@@ -54,6 +54,22 @@ data class Session(
 
 class SessionStore(private val context: Context) {
 
+    /**
+     * 安全解析 messages 字段。
+     * 旧写法 `JSONArray(x.let { if (..) it else JSONArray() })` 会被解析成 JSONArray(Object),
+     * 而该构造器只接受集合/数组、不接受字符串 → 每个会话文件都抛异常(会话列表一直空的根因)。
+     */
+    private fun msgsOf(o: JSONObject): JSONArray {
+        val raw = o.opt("messages")
+        val text = when (raw) {
+            is JSONArray -> return raw
+            is String -> raw
+            null -> "[]"
+            else -> raw.toString()
+        }
+        return try { JSONArray(text) } catch (e: Exception) { JSONArray() }
+    }
+
     private val dir: File = File(context.filesDir, "sessions").apply { mkdirs() }
 
     fun list(): List<Session> =
@@ -84,9 +100,7 @@ class SessionStore(private val context: Context) {
         for (f in files) {
             try {
                 val o = JSONObject(f.readText())
-                val msgs = JSONArray(o.optString("messages", "[]").let {
-                    if (it.startsWith("[")) it else JSONArray()
-                })
+                val msgs = msgsOf(o)
                 out.add(SessionBrief(
                     id = o.optString("id"),
                     title = o.optString("title", "新会话"),
@@ -95,11 +109,10 @@ class SessionStore(private val context: Context) {
                     msgCount = msgs.length(),
                 ))
             } catch (e: Exception) {
-                AppLog.i("sess", "bad file ${f.name}")
+                AppLog.i("sess", "bad ${f.name}: ${e.message}")
             }
         }
         out.sortByDescending { it.updatedAt }
-        AppLog.i("sess", "briefs=${out.size} files=${files.size}")
         return out
     }
 
@@ -107,9 +120,7 @@ class SessionStore(private val context: Context) {
 
     private fun load(f: File): Session? = try {
         val o = JSONObject(f.readText())
-        val msgs = JSONArray(o.optString("messages", "[]").let {
-            if (it.startsWith("[")) it else JSONArray()
-        })
+        val msgs = msgsOf(o)
         Session(
             id = o.getString("id"),
             title = o.optString("title", "新会话"),

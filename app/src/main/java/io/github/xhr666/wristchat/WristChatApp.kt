@@ -30,6 +30,10 @@ class WristChatApp : Application() {
     @Volatile
     private var mainTick = System.currentTimeMillis()
 
+    /** 应用是否在前台:后台/息屏时不判定 ANR(否则主线程空闲会被误报成卡死) */
+    @Volatile
+    var appVisible = false
+
     private fun installAnrWatchdog() {
         val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
         val t = Thread {
@@ -37,7 +41,7 @@ class WristChatApp : Application() {
                 try {
                     Thread.sleep(4000)
                     val stuckMs = System.currentTimeMillis() - mainTick
-                    if (stuckMs > 8000) {
+                    if (appVisible && stuckMs > 8000) {
                         mainTick = System.currentTimeMillis() // 防重复刷
                         val sb = StringBuilder()
                         sb.append("=== ANR suspected, main stuck ~").append(stuckMs).append("ms | ")

@@ -22,10 +22,12 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         stoppedAt = System.currentTimeMillis()
+        (application as? WristChatApp)?.appVisible = false
     }
 
     override fun onStart() {
         super.onStart()
+        (application as? WristChatApp)?.appVisible = true
         val away = if (stoppedAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - stoppedAt
         // 配置变更(主题/缩放 recreate)与短时离开(选图片等)不重新上锁;退后台超过 30 秒则重新校验
         if (!isChangingConfigurations && away > 30_000L) {
