@@ -62,8 +62,9 @@ val LocalPageBack = staticCompositionLocalOf<() -> Unit> { {} }
 @Composable
 fun HomePager(settings: SettingsStore) {
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
-    // settledPage:只在页面真正落定时更新,滑动过程中不触发整树重组
-    val currentPage by remember { derivedStateOf { pagerState.settledPage } }
+    // 必须用 currentPage:settledPage 在某些情况下不更新,
+    // 会导致"进入负一屏即刷新 / 表冠启用判断 / 余额刷新"全部失效(会话列表一直是空的根因)
+    val currentPage by remember { derivedStateOf { pagerState.currentPage } }
     val scope = rememberCoroutineScope()
     val app = LocalContext.current.applicationContext as WristChatApp
     val chatVm: io.github.xhr666.wristchat.ui.chat.ChatViewModel =

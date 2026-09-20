@@ -32,15 +32,16 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
     val c = LocalWrist.current
 
     // 每次进入负一屏都刷新(IO 线程解析,避免卡顿)
+    // 进入负一屏就刷新(也监听会话变化:发送/新建后立刻反映)
     LaunchedEffect(currentPage) {
-        if (currentPage == 0) { kotlinx.coroutines.delay(400); vm.refreshSessions() }
+        if (currentPage == 0) { kotlinx.coroutines.delay(200); vm.refreshSessions() }
     }
     var deleteTarget by remember { mutableStateOf<SessionStore.SessionBrief?>(null) }
 
     ScreenScaffold(
         title = if (sessions.isEmpty()) "会话" else "会话(${sessions.size})",
         showTimeAlways = true,
-        actions = {},
+        actions = { SmallAction("⟳") { vm.refreshSessions() } },
         scrollIndicator = listState,
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -70,7 +71,7 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
             // 提示(居中于列表区,避开底部圆边)
             if (sessions.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("暂无会话\n去聊天页开始第一段对话", color = c.hint, fontSize = 12.sp,
+                    Text("暂无会话\n去聊天页开始第一段对话\n(可点右上角 ⟳ 刷新)", color = c.hint, fontSize = 12.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         modifier = Modifier.padding(bottom = 30.dp))
                 }

@@ -141,7 +141,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
         logPage?.let { t ->
             val app = LocalContext.current.applicationContext as WristChatApp
             LogViewerScreen(
-                title = when (t) { "crash" -> "崩溃日志"; "anr" -> "ANR/卡死日志"; else -> "运行日志" },
+                title = when (t) { "crash" -> "崩溃日志"; "anr" -> "ANR/卡死日志"; "sess" -> "会话自检"; else -> "运行日志" },
                 load = when (t) {
                     "crash" -> { { app.crashLogText() } }
                     "anr" -> { { app.anrLogText() } }
@@ -534,6 +534,7 @@ private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: 
     item { WCard("版本", s.versionName) }
     item { WCard("开源许可", "MIT + 第三方库") { d.text("开源许可", licenseText()) } }
     item {
+        WCard("会话文件自检", "磁盘上有哪些会话、是否能解析") { openLog("sess") }
         WCard("查看崩溃日志", "crash.log · 闪退堆栈") { openLog("crash") }
         WCard("ANR/卡死日志", "anr.log · 界面卡死的主线程堆栈") { openLog("anr") }
         WCard("运行日志", "app.log · 更新/弹窗操作记录") { openLog("run") }

@@ -146,3 +146,29 @@ private fun trimOldExports(ctx: Context, keep: Int): Int {
         removed
     } catch (e: Exception) { 0 }
 }
+
+/** 会话自检:磁盘上到底有哪些会话文件、能不能解析(排查"会话不显示") */
+fun sessionSelfCheck(ctx: Context): String {
+    val dir = java.io.File(ctx.filesDir, "sessions")
+    val sb = StringBuilder()
+    sb.append("目录: ").append(dir.absolutePath).append('\n')
+    sb.append("存在: ").append(dir.exists()).append('\n')
+    val files = dir.listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
+    sb.append("文件数: ").append(files.size).append("\n\n")
+    var ok = 0
+    files.take(30).forEach { f ->
+        val parsed = try {
+            val o = org.json.JSONObject(f.readText())
+            val id = o.optString("id")
+            val title = o.optString("title")
+            val n = org.json.JSONArray(o.optString("messages", "[]")).length()
+            ok++
+            "OK  id=$id  title=$title  msgs=$n"
+        } catch (e: Exception) {
+            "BAD ${e.message}"
+        }
+        sb.append(f.name).append("  ").append(f.length()).append("B  ").append(parsed).append('\n')
+    }
+    sb.append("\n可解析: ").append(ok).append(" / ").append(files.size)
+    return sb.toString()
+}
