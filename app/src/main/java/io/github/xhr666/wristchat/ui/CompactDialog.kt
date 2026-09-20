@@ -51,10 +51,15 @@ fun CompactDialog(
     val maxH = minOf(sh - 20f, 170f, maxHByCircle).dp
     // 改用系统 Dialog 窗口承载:自绘全屏覆盖层在部分手表上不显示/被页面布局影响;
     // 系统窗口天然置顶、自带遮罩(点击外部关闭),不再需要自绘 mask。
+    val dialogView = androidx.compose.ui.platform.LocalView.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        SideEffect {
+            // 关掉系统窗口动画:某些显示大小下弹窗会从边角滑入(用户反馈的 bug)
+            (dialogView.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.setWindowAnimations(0)
+        }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Surface(
                 shape = RoundedCornerShape(22.dp),

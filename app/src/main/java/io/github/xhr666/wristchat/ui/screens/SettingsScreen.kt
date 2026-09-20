@@ -36,6 +36,7 @@ private data class Cat(val key: String, val title: String, val desc: String)
 private val CATS = listOf(
     Cat("service", "服务", "服务商 / Key / 地址"),
     Cat("model", "模型与对话", "模型 / 思考 / 参数"),
+    Cat("models_prompts", "默认模型与提示词", "6 个任务模型 / 4 段提示词"),
     Cat("quick", "快捷输入", "逐条管理"),
     Cat("skills_memory", "技能与记忆", "Skills / 记忆"),
     Cat("sessions", "会话与导入", "导入 / 管理"),
@@ -44,7 +45,8 @@ private val CATS = listOf(
     Cat("security", "安全与外观", "密码 / 主题 / 缩放"),
     Cat("about", "关于", "版本 / 许可 / 日志"),
 )
-private val CAT_TITLE = CATS.associate { it.key to it.title }
+private val CAT_TITLE = CATS.associate { it.key to it.title } +
+    mapOf("mp_models" to "默认模型", "mp_prompts" to "提示词")
 
 @Composable
 fun SettingsMenuScreen(settings: SettingsStore) {
@@ -91,6 +93,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
     val listState = rememberLazyListState()
     var syncOpen by remember { mutableStateOf(false) }
     var logPage by remember { mutableStateOf<String?>(null) }  // crash / anr / run
+    var subPage by remember { mutableStateOf<String?>(null) }  // mp_models / mp_prompts
 
     // 分类页/同步页期间锁定横滑翻页:SideEffect 提交后写(不在组合期直接写)
     SideEffect { PagerLock.locked = true }
@@ -119,10 +122,17 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                         "update" -> updateRows(settings, dialogs) { syncOpen = true }
                         "security" -> securityRows(settings, dialogs)
                         "about" -> aboutRows(settings, vm, dialogs) { logPage = it }
+                    "models_prompts" -> modelsPromptsRows(settings, dialogs) { subPage = it }
+                    "mp_models" -> defaultModelRows(settings, dialogs)
+                    "mp_prompts" -> promptRows(settings, dialogs)
                     }
                 }
                 RotaryList(listState, enabled = LocalCurrentPage.current == 3 && !syncOpen && logPage == null)
             }
+        }
+        // 子页(默认模型 / 提示词):叠在分类页之上,右滑返回露出上一层
+        subPage?.let { sp ->
+            CategoryScreen(settings, vm, sp, onBack = { subPage = null })
         }
         // 同步页 / 日志页:叠在分类页之上,返回时露出分类页
         if (syncOpen) {
@@ -145,6 +155,38 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
 }
 
 // ---------- 各行内容 ----------
+
+/** 默认模型与提示词:两个入口 */
+private fun LazyListScope.modelsPromptsRows(s: SettingsStore, d: DialogController, openSub: (String) -> Unit) {
+    item { WCard("默认模型", "聊天 / 快速 / 标题 / 翻译 / OCR / 压缩") { openSub("mp_models") } }
+    item { WCard("提示词", "翻译 / 标题 / OCR / 压缩(可改,可恢复默认)") { openSub("mp_prompts") } }
+    item { WCard("说明", "每类任务各用一个模型;提示词里的 {变量} 会被自动替换") }
+}
+
+/** 六个任务模型 */
+private fun LazyListScope.defaultModelRows(s: SettingsStore, d: DialogController) {
+    fun choose(title: String, cur: String, apply: (String) -> Unit) {
+        val ms = Providers.resolve(s).models.ifEmpty { listOf("deepseek-flash") }
+        d.choice(title, ms, ms.indexOf(cur).coerceAtLeast(0)) { i -> apply(ms[i]) }
+    }
+    item { WCard("聊天模型", s.model) { choose("聊天模型", s.model) { s.model = it } } }
+    item { WCard("快速模型", s.modelQuick) { choose("快速模型", s.modelQuick) { s.modelQuick = it } } }
+    item { WCard("标题总结模型", s.modelTitle) { choose("标题总结模型", s.modelTitle) { s.modelTitle = it } } }
+    item { WCard("翻译模型", s.modelTranslate) { choose("翻译模型", s.modelTranslate) { s.modelTranslate = it } } }
+    item { WCard("OCR 模型", s.modelOcr) { choose("OCR 模型", s.modelOcr) { s.modelOcr = it } } }
+    item { WCard("压缩模型", s.modelCompress) { choose("压缩模型", s.modelCompress) { s.modelCompress = it } } }
+}
+
+/** 四段提示词 */
+private fun LazyListScope.promptRows(s: SettingsStore, d: DialogController) {
+    item { WCard("翻译提示词", "变量:{source_text} {target_lang}") { d.input("翻译提示词", s.promptTranslate, ml = true) { s.promptTranslate = it } } }
+    item { WCard("标题生成提示词", "变量:{content} {locale}") { d.input("标题生成提示词", s.promptTitle, ml = true) { s.promptTitle = it } } }
+    item { WCard("OCR 识别提示词", "变量:{images}") { d.input("OCR 识别提示词", s.promptOcr, ml = true) { s.promptOcr = it } } }
+    item { WCard("上下文压缩提示词", "变量:{content} {target_tokens} {additional_context} {locale}") { d.input("上下文压缩提示词", s.promptCompress, ml = true) { s.promptCompress = it } } }
+    item { WCard("恢复默认提示词", "全部还原为内置默认文本") {
+        d.confirm("恢复默认", "四段提示词都会恢复为内置默认,确定?", ok = "恢复") { s.resetPrompts() }
+    } }
+}
 private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
     item { WCard("服务商", Providers.byId(s.providerId).name) {
         val ids = listOf("deepseek", "qwen", "glm", "kimi", "volcano", "custom")

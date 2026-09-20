@@ -58,8 +58,11 @@ class BalanceViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val result = repo.fetch()
             val supports = settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
-            val peak = Pricing.isPeak(System.currentTimeMillis() / 1000)
-            val peakLabel = if (peak) {
+            val nowSec = System.currentTimeMillis() / 1000
+            val peak = Pricing.isPeak(nowSec)
+            val peakLabel = if (Pricing.isHoliday(nowSec)) {
+                "🏖 法定假期(北京时间)\n全天按空闲时段计费"
+            } else if (peak) {
                 "🌞 高峰时段(北京时间)\n距高峰结束:${fmtRemain(nextSwitchSeconds())}"
             } else {
                 "🌙 空闲时段(北京时间)\n距下一高峰开始:${fmtRemain(nextSwitchSeconds())}"

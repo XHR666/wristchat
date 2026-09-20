@@ -104,7 +104,16 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = LocalRoundBottom.current),
             ) {
-                itemsIndexed(messages, key = { i, m -> "$i-${m.ts}" }) { _, m -> MessageItem(m, markwon) }
+                itemsIndexed(messages, key = { i, m -> "$i-${m.ts}" }) { _, m ->
+                    MessageItem(m, markwon) { text ->
+                        // 翻译:用翻译模型 + 翻译提示词(变量自动替换)
+                        val lang = java.util.Locale.getDefault().displayLanguage
+                        val p = vm.settings.promptTranslate
+                            .replace("{target_lang}", lang)
+                            .replace("{source_text}", text)
+                        vm.send(p, emptyList(), modelOverride = vm.settings.modelTranslate)
+                    }
+                }
                 if (sending) item { Text("思考中…", color = c.hint, fontSize = 12.sp) }
             }
             Row(
@@ -151,7 +160,7 @@ private fun detailsText(d: io.github.xhr666.wristchat.ui.chat.ConvDetails): Stri
 
 /** 消息气泡 */
 @Composable
-fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon) {
+fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon, onTranslate: ((String) -> Unit)? = null) {
     val c = LocalWrist.current
     var expanded by remember { mutableStateOf(false) }
     val isUser = m.role == "user"
@@ -186,8 +195,12 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
                 .padding(10.dp),
         ) {
             Column {
-                m.img?.let { MsgImage(it) }
-                if (m.content.isNotBlank() || m.img == null) MsgContent(m.content, isUser, markwon)
+                m.imgs.firstOrNull()?.let { MsgImage(it) }
+                if (m.imgs.size > 1) {
+                    Text("共 ${m.imgs.size} 张图片", color = LocalWrist.current.hint, fontSize = 10.sp,
+                        modifier = Modifier.padding(bottom = 2.dp))
+                }
+                if (m.content.isNotBlank() || m.imgs.isEmpty()) MsgContent(m.content, isUser, markwon)
             }
         }
         if (!isUser) {
@@ -196,6 +209,13 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
                     Text("tokens:${m.usage?.totalTokens ?: 0} · ¥%.4f".format(m.cost), color = c.hint, fontSize = 9.sp)
                 }
                 val ctx = LocalContext.current
+                if (onTranslate != null && m.content.isNotBlank()) {
+                    Text("  翻译", color = c.accent, fontSize = 10.sp,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onTranslate(m.content) }
+                            .padding(horizontal = 4.dp, vertical = 2.dp))
+                }
                 Text("  复制", color = c.accent, fontSize = 10.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -270,7 +290,7 @@ private fun Color.toArgbCompat(): Int = android.graphics.Color.argb(
 fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val c = LocalWrist.current
-    var attachName by remember { mutableStateOf<String?>(null) }
+    var attachNames by remember { mutableStateOf<List<String>>(emptyList()) }
     var attachThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var visionAsk by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
@@ -287,15 +307,18 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
 
     if (galleryOpen) {
         GalleryScreen(
-            onPick = { uri, file ->
+            onPickMany = { picked ->
                 galleryOpen = false
                 scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    val name = if (file != null)
-                        io.github.xhr666.wristchat.data.Attachments.importFromFile(ctx, file, vm.currentSessionId() ?: "s")
-                    else io.github.xhr666.wristchat.data.Attachments.importFromUri(ctx, uri!!, vm.currentSessionId() ?: "s")
-                    val thumb = name?.let { io.github.xhr666.wristchat.data.Attachments.loadThumb(ctx, it) }
+                    val sid = vm.currentSessionId() ?: "s"
+                    val added = picked.mapNotNull { item ->
+                        if (item.file != null) io.github.xhr666.wristchat.data.Attachments.importFromFile(ctx, item.file, sid)
+                        else item.uri?.let { io.github.xhr666.wristchat.data.Attachments.importFromUri(ctx, it, sid) }
+                    }
+                    val thumb = added.firstOrNull()?.let { io.github.xhr666.wristchat.data.Attachments.loadThumb(ctx, it) }
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        if (name == null) hint = "图片读取失败" else { attachName = name; attachThumb = thumb }
+                        if (added.isEmpty()) hint = "图片读取失败"
+                        else { attachNames = attachNames + added; attachThumb = thumb }
                     }
                 }
             },
@@ -311,6 +334,22 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         galleryOpen = true
     }
 
+    // 用独立 Dialog 窗口承载:键盘弹出不会把按钮挤出屏幕,也不受 Pager 影响(不会划出空白页)
+    val dialogView = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { closeWithSave() },
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false,
+        ),
+    ) {
+    SideEffect {
+        // 关掉系统窗口动画(切换显示大小后弹窗会从角落滑入的 bug)
+        (dialogView.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.apply {
+            setWindowAnimations(0)
+            setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+    }
     Column(
         Modifier
             .fillMaxSize()
@@ -320,7 +359,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SmallAction("‹") { closeWithSave() }
-            Text(if (attachName != null) "发送图片" else "输入消息", color = c.text, fontSize = 14.sp,
+            Text(if (attachNames.isNotEmpty()) "发送图片" else "输入消息", color = c.text, fontSize = 14.sp,
                 modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             SmallAction("📋") {
                 // 粘贴:读系统剪贴板
@@ -337,11 +376,20 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
                 }
             }
             SmallAction("🖼") { launchGallery() }
+            if (attachNames.isNotEmpty()) {
+                SmallAction("OCR") {
+                    val p = vm.settings.promptOcr.replace("{images}", "(见附图)")
+                    vm.setDraft(p)
+                    vm.send(p, attachNames, modelOverride = vm.settings.modelOcr)
+                    vm.clearDraft()
+                    onClose()
+                }
+            }
             SmallAction("➤") {
                 val t = body()
                 vm.setDraft(t)
                 // send() 成功时内部会清草稿;失败(空内容/上一条还在发)时保留草稿,不能丢字
-                val accepted = vm.send(t, attachName)
+                val accepted = vm.send(t, attachNames)
                 if (accepted) vm.clearDraft()
                 else vm.saveDraftNow()
                 onClose()
@@ -351,11 +399,12 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
                 androidx.compose.foundation.Image(
                     bitmap = bmp.asImageBitmap(), contentDescription = null,
-                    modifier = Modifier.size(42.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+                    modifier = Modifier.size(38.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
                 )
-                Text("已选图片(JPEG 压缩后上传)", color = c.hint, fontSize = 11.sp,
+                // 多张只显示数量,不堆叠
+                Text("已选 ${attachNames.size} 张图片(JPEG 压缩后上传)", color = c.hint, fontSize = 11.sp,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
-                SmallAction("✕") { attachName = null; attachThumb = null }
+                SmallAction("✕") { attachNames = emptyList(); attachThumb = null }
             }
         }
         hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp)) }
@@ -408,4 +457,5 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
                 galleryOpen = true
             }, onCancel = { visionAsk = false })
     }
+}
 }

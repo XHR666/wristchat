@@ -37,7 +37,7 @@ data class GalleryItem(val uri: Uri?, val file: File?, val date: Long, val name:
  * - 3 列网格,点一下即选中
  */
 @Composable
-fun GalleryScreen(onPick: (Uri?, File?) -> Unit, onBack: () -> Unit) {
+fun GalleryScreen(onPickMany: (List<GalleryItem>) -> Unit, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val c = LocalWrist.current
     var items by remember { mutableStateOf<List<GalleryItem>>(emptyList()) }
@@ -45,6 +45,7 @@ fun GalleryScreen(onPick: (Uri?, File?) -> Unit, onBack: () -> Unit) {
     var nonce by remember { mutableStateOf(0) }
     var sizeInfo by remember { mutableStateOf("") }
     var needPerm by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<GalleryItem>() }
     // 读系统媒体库需要权限:Android 13+ 是 READ_MEDIA_IMAGES,12 及以下是 READ_EXTERNAL_STORAGE
     val permName = remember {
         if (android.os.Build.VERSION.SDK_INT >= 33) "android.permission.READ_MEDIA_IMAGES"
@@ -132,7 +133,16 @@ fun GalleryScreen(onPick: (Uri?, File?) -> Unit, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(items) { it ->
-                        GalleryCell(it, c) { onPick(it.uri, it.file) }
+                        val idx = selected.indexOf(it)
+                        GalleryCell(it, c, selected = idx >= 0, order = idx + 1) {
+                            if (idx >= 0) selected.remove(it) else selected.add(it)
+                        }
+                    }
+                }
+                // 多选:底部"完成(N)"
+                if (selected.isNotEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                        SmallAction("完成(${selected.size})") { onPickMany(selected.toList()) }
                     }
                 }
             }
@@ -141,7 +151,7 @@ fun GalleryScreen(onPick: (Uri?, File?) -> Unit, onBack: () -> Unit) {
 }
 
 @Composable
-private fun GalleryCell(item: GalleryItem, c: WristColors, onClick: () -> Unit) {
+private fun GalleryCell(item: GalleryItem, c: WristColors, selected: Boolean, order: Int, onClick: () -> Unit) {
     val ctx = LocalContext.current
     val bmp by produceState<Bitmap?>(null, item.uri, item.file) {
         value = withContext(Dispatchers.IO) {
@@ -171,6 +181,11 @@ private fun GalleryCell(item: GalleryItem, c: WristColors, onClick: () -> Unit) 
                 modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } else {
             Text("…", color = c.hint, fontSize = 12.sp)
+        }
+        if (selected) {
+            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0x66000000)))
+            Text("$order", color = androidx.compose.ui.graphics.Color.White, fontSize = 14.sp,
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp))
         }
     }
 }

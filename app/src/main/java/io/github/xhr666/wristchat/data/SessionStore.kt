@@ -10,13 +10,16 @@ import java.util.UUID
 data class ChatMessage(
     val role: String,          // user / assistant / system
     val content: String,
-    val img: String? = null,   // 图片附件文件名(filesDir/attachments/),仅 user 消息
+    val imgs: List<String> = emptyList(),   // 图片附件文件名(filesDir/attachments/),仅 user 消息,可多张
     val reasoning: String = "",
     val ts: Long = System.currentTimeMillis(),
     val usage: TokenUsage? = null,
     val cost: Double = 0.0,
     val toolCalls: List<ToolCall> = emptyList(),
-)
+) {
+    /** 首张图片(兼容旧代码) */
+    val img: String? get() = imgs.firstOrNull()
+}
 
 data class ToolCall(val id: String, val name: String, val arguments: String)
 
@@ -114,7 +117,8 @@ class SessionStore(private val context: Context) {
                 ChatMessage(
                     role = m.optString("role"),
                     content = m.optString("content"),
-                    img = m.optString("img").takeIf { it.isNotBlank() },
+                    imgs = m.optJSONArray("imgs")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf { s2 -> s2.isNotBlank() } } }
+                        ?: listOfNotNull(m.optString("img").takeIf { it.isNotBlank() }),
                     reasoning = m.optString("reasoning"),
                     ts = m.optLong("ts"),
                     usage = m.optJSONObject("usage")?.let { u ->
@@ -144,7 +148,10 @@ class SessionStore(private val context: Context) {
                 JSONObject().apply {
                     put("role", m.role)
                     put("content", m.content)
-                    m.img?.let { put("img", it) }
+                    if (m.imgs.isNotEmpty()) {
+                        put("imgs", org.json.JSONArray(m.imgs))
+                        put("img", m.imgs.first())   // 兼容旧版本
+                    }
                     put("reasoning", m.reasoning)
                     put("ts", m.ts)
                     m.usage?.let { u ->

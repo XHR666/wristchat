@@ -75,16 +75,17 @@ class ChatRepository(
     suspend fun chat(
         history: List<ChatMessage>,
         newUserText: String,
-        imageFile: String? = null,
+        imageFiles: List<String> = emptyList(),
         enableMemory: Boolean,
+        modelOverride: String? = null,
     ): ChatResult {
         val provider = Providers.resolve(settings)
         val apiKey = settings.apiKey
         if (apiKey.isBlank()) return ChatResult.Error("请先在设置中填写 API Key")
         val url = provider.defaultBaseUrl + provider.defaultPath
-        val model = settings.model.ifBlank { provider.models.firstOrNull() ?: "deepseek-flash" }
+        val model = (modelOverride ?: settings.model).ifBlank { provider.models.firstOrNull() ?: "deepseek-flash" }
         val vision = supportsVision(model)
-        if (imageFile != null && !vision) {
+        if (imageFiles.isNotEmpty() && !vision) {
             return ChatResult.Error("当前模型($model)不支持图片,请在设置里切换到 $VISION_MODEL")
         }
 
@@ -116,8 +117,8 @@ class ChatRepository(
             messages.put(o)
         }
         // 本轮提问:带图时 content 为 text+image 块数组(官方 vision 格式)
-        val ask = if (imageFile != null && vision) {
-            contentOf(ChatMessage(role = "user", content = newUserText, img = imageFile), vision)
+        val ask = if (imageFiles.isNotEmpty() && vision) {
+            contentOf(ChatMessage(role = "user", content = newUserText, imgs = imageFiles), vision)
         } else newUserText
         messages.put(JSONObject().put("role", "user").put("content", ask))
 
@@ -180,7 +181,11 @@ class ChatRepository(
                 val id = tc.optString("id")
                 if (name == "memory_tool") {
                     val result = executeMemoryTool(args, ops)
-                    runCatching { AppLog.i("mem", "$args -> $result") }
+                    // 隐私:只记动作与 id,绝不把记忆内容(用户个人信息)写进日志
+                    runCatching {
+                        val o = JSONObject(args)
+                        AppLog.i("mem", "action=${o.optString("action")} id=${o.optString("id")}")
+                    }
                     toolResults.put(JSONObject().apply {
                         put("role", "tool")
                         put("tool_call_id", id)
@@ -246,13 +251,15 @@ class ChatRepository(
      * 否则保持纯文本字符串(官方格式,图片仅在 user 消息,每图 ≤384 tokens)。
      */
     private suspend fun contentOf(m: ChatMessage, vision: Boolean): Any {
-        val img = m.img
-        if (!vision || img == null || m.role != "user") return m.content
-        val b64 = withContext(Dispatchers.IO) { Attachments.readBase64(app, img) } ?: return m.content
+        if (!vision || m.imgs.isEmpty() || m.role != "user") return m.content
+        val b64s = withContext(Dispatchers.IO) { m.imgs.mapNotNull { Attachments.readBase64(app, it) } }
+        if (b64s.isEmpty()) return m.content
         return JSONArray().apply {
             if (m.content.isNotBlank()) put(JSONObject().put("type", "text").put("text", m.content))
-            put(JSONObject().put("type", "image_url").put("image_url",
-                JSONObject().put("url", "data:image/jpeg;base64,$b64")))
+            b64s.forEach { b64 ->
+                put(JSONObject().put("type", "image_url").put("image_url",
+                    JSONObject().put("url", "data:image/jpeg;base64,$b64")))
+            }
         }
     }
 
@@ -308,7 +315,10 @@ class ChatRepository(
             put("model", model)
             put("messages", JSONArray().apply {
                 put(JSONObject().put("role", "system").put("content",
-                    "你是对话摘要助手。请将下面的对话压缩为简洁但保留关键信息的摘要(中文,300字以内)。不要添加对话中没有的信息。"))
+                    settings.promptCompress
+                        .replace("{target_tokens}", "300")
+                        .replace("{additional_context}", "")
+                        .replace("{locale}", java.util.Locale.getDefault().displayLanguage)) )
                 messages.forEach { m -> put(JSONObject().put("role", m.role).put("content", m.content)) }
             })
             put("max_tokens", 1024)
@@ -332,12 +342,13 @@ class ChatRepository(
         val key = settings.apiKey
         if (key.isBlank()) return "" to null
         val body = JSONObject().apply {
-            put("model", settings.model)
+            put("model", settings.modelTitle)
             put("messages", JSONArray().apply {
                 put(JSONObject().put("role", "system").put("content",
-                    "你是会话标题生成器。根据下面这段对话的开头,用不超过12个字的中文概括主题,只输出标题本身,不要引号、不要解释。"))
-                put(JSONObject().put("role", "user").put("content",
-                    "用户:${firstUser.take(120)}\n助手:${firstReply.take(120)}"))
+                    settings.promptTitle
+                        .replace("{locale}", java.util.Locale.getDefault().displayLanguage)
+                        .replace("{content}", "用户:${firstUser.take(120)}\n助手:${firstReply.take(120)}")))
+                put(JSONObject().put("role", "user").put("content", "请给出标题"))
             })
             put("max_tokens", 32)
             put("thinking", JSONObject().apply { put("type", "disabled") })

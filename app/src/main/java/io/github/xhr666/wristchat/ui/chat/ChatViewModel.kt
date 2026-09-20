@@ -251,15 +251,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** @return true 表示已受理(消息已入队);false 表示被拒绝(此时调用方要保留草稿) */
-    fun send(text: String, imageFile: String? = null): Boolean {
+    fun send(text: String, imageFiles: List<String> = emptyList(), modelOverride: String? = null): Boolean {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() && imageFile == null) return false
+        if (trimmed.isEmpty() && imageFiles.isEmpty()) return false
         if (_sending.value == true) return false
         if (trimmed.isNotEmpty() && handleSlash(trimmed)) { clearDraft(); return true }
 
         val s = _session.value ?: return false
         val ts = System.currentTimeMillis()
-        val userMsg = ChatMessage(role = "user", content = trimmed, img = imageFile, ts = ts)
+        val userMsg = ChatMessage(role = "user", content = trimmed, imgs = imageFiles, ts = ts)
         // 先落库(即使请求失败,用户消息也保留)
         s.messages.add(userMsg)
         sessionStore.save(s)
@@ -272,8 +272,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             maybeCompress(s)
             // 历史不含刚追加的这条用户消息(仓库会把它作为本轮提问带上去,避免重复)
             val history = s.messages.filter { it.role != "system" && it !== userMsg }
-            val result = repo.chat(history, trimmed, imageFile = imageFile,
-                enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK)
+            val result = repo.chat(history, trimmed, imageFiles = imageFiles,
+                enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK,
+                modelOverride = modelOverride)
             when (result) {
                 is ChatResult.Success -> {
                     val ai = ChatMessage(
@@ -349,7 +350,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val keep = 10
         val toCompress = all.subList(0, all.size - keep)
         if (toCompress.isEmpty()) return
-        val model = settings.model
+        val model = settings.modelCompress
         val key = settings.apiKey
         val provider = io.github.xhr666.wristchat.data.Providers.resolve(settings)
         if (key.isBlank()) return

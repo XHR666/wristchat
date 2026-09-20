@@ -45,9 +45,50 @@ class SettingsStore(context: Context) {
         set(v) = prefs.edit().putString(KEY_API_PATH, v.trim()).apply()
 
     // ---- 模型 / 思考 / 参数 ----
+    /** 聊天模型(历史字段名保持不变:model == modelChat) */
     var model: String
         get() = prefs.getString(KEY_MODEL, "deepseek-flash") ?: "deepseek-flash"
         set(v) = prefs.edit().putString(KEY_MODEL, v.trim()).apply()
+
+    // ---- 各类任务默认模型(默认全部 deepseek-flash)----
+    private fun strOf(key: String, def: String) = prefs.getString(key, def) ?: def
+    private fun setStr(key: String, v: String) = prefs.edit().putString(key, v.trim()).apply()
+
+    var modelQuick: String
+        get() = strOf(KEY_MODEL_QUICK, "deepseek-flash")
+        set(v) = setStr(KEY_MODEL_QUICK, v)
+    var modelTitle: String
+        get() = strOf(KEY_MODEL_TITLE, "deepseek-flash")
+        set(v) = setStr(KEY_MODEL_TITLE, v)
+    var modelTranslate: String
+        get() = strOf(KEY_MODEL_TRANSLATE, "deepseek-flash")
+        set(v) = setStr(KEY_MODEL_TRANSLATE, v)
+    var modelOcr: String
+        get() = strOf(KEY_MODEL_OCR, "deepseek-flash")
+        set(v) = setStr(KEY_MODEL_OCR, v)
+    var modelCompress: String
+        get() = strOf(KEY_MODEL_COMPRESS, "deepseek-flash")
+        set(v) = setStr(KEY_MODEL_COMPRESS, v)
+
+    // ---- 提示词模板(可在设置里改,可一键恢复默认)----
+    var promptTranslate: String
+        get() = strOf(KEY_P_TRANSLATE, DEFAULT_PROMPT_TRANSLATE)
+        set(v) = setStr(KEY_P_TRANSLATE, v)
+    var promptTitle: String
+        get() = strOf(KEY_P_TITLE, DEFAULT_PROMPT_TITLE)
+        set(v) = setStr(KEY_P_TITLE, v)
+    var promptOcr: String
+        get() = strOf(KEY_P_OCR, DEFAULT_PROMPT_OCR)
+        set(v) = setStr(KEY_P_OCR, v)
+    var promptCompress: String
+        get() = strOf(KEY_P_COMPRESS, DEFAULT_PROMPT_COMPRESS)
+        set(v) = setStr(KEY_P_COMPRESS, v)
+
+    fun resetPrompts() {
+        prefs.edit()
+            .remove(KEY_P_TRANSLATE).remove(KEY_P_TITLE).remove(KEY_P_OCR).remove(KEY_P_COMPRESS)
+            .apply()
+    }
 
     var thinkingEnabled: Boolean
         get() = prefs.getBoolean(KEY_THINKING, true)
@@ -196,6 +237,79 @@ class SettingsStore(context: Context) {
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_API_PATH = "api_path"
         private const val KEY_MODEL = "model"
+        private const val KEY_MODEL_QUICK = "model_quick"
+        private const val KEY_MODEL_TITLE = "model_title"
+        private const val KEY_MODEL_TRANSLATE = "model_translate"
+        private const val KEY_MODEL_OCR = "model_ocr"
+        private const val KEY_MODEL_COMPRESS = "model_compress"
+        private const val KEY_P_TRANSLATE = "prompt_translate"
+        private const val KEY_P_TITLE = "prompt_title"
+        private const val KEY_P_OCR = "prompt_ocr"
+        private const val KEY_P_COMPRESS = "prompt_compress"
+
+        /** 翻译提示词(变量:{source_text} {target_lang}) */
+        val DEFAULT_PROMPT_TRANSLATE = """
+You are a translation expert, skilled in translating various languages, and maintaining accuracy, faithfulness, and elegance in translation.
+Next, I will send you text. Please translate it into {target_lang}, and return the translation result directly, without adding any explanations or other content.
+
+Please translate the <source_text> section:
+
+<source_text>
+{source_text}
+</source_text>
+""".trimIndent()
+
+        /** 标题生成提示词(变量:{content} {locale}) */
+        val DEFAULT_PROMPT_TITLE = """
+I will give you some dialogue content in the `<content>` block.
+You need to summarize the conversation between user and assistant into a short title.
+1. The title language should be consistent with the user's primary language
+2. Do not use punctuation or other special symbols
+3. Reply directly with the title
+4. Summarize using {locale} language
+5. The title should not exceed 10 characters
+
+<content>
+{content}
+</content>
+""".trimIndent()
+
+        /** OCR 提示词(变量:{images}) */
+        val DEFAULT_PROMPT_OCR = """
+You are an OCR assistant.
+
+Extract all visible text from the image and also describe any non-text elements (icons, shapes, arrows, objects, symbols, or emojis).
+
+For each element, specify:
+- The exact text (for text) or a short description (for non-text).
+- For document-type content, please use markdown and latex format.
+- If there are objects like buildings or characters, try to identify who they are.
+- Its approximate position in the image (e.g., 'top left', 'center right', 'bottom middle').
+- Its spatial relationship to nearby elements (e.g., 'above', 'below', 'next to', 'on the left of').
+
+Keep the original reading order and layout structure as much as possible.
+Do not interpret or translate—only transcribe and describe what is visually present.
+""".trimIndent()
+
+        /** 上下文压缩提示词(变量:{content} {target_tokens} {additional_context} {locale}) */
+        val DEFAULT_PROMPT_COMPRESS = """
+You are a conversation compression assistant. Compress the following conversation into a concise summary.
+
+Requirements:
+1. Preserve key facts, decisions, and important context that would be needed to continue the conversation
+2. Keep the summary in the same language as the original conversation
+3. Target approximately {target_tokens} tokens
+4. Output the summary directly without any explanations or meta-commentary
+5. Format the summary as context information that can be used to continue the conversation
+6. Use {locale} language
+7. Start the output with a clear indicator that this is a summary (e.g., "[Summary of previous conversation]" or equivalent in the target language)
+
+{additional_context}
+
+<conversation>
+{content}
+</conversation>
+""".trimIndent()
         private const val KEY_THINKING = "thinking"
         private const val KEY_EFFORT = "effort"
         private const val KEY_TEMPERATURE = "temperature"

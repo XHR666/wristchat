@@ -25,7 +25,32 @@ object Pricing {
      * 官方规则(api-docs.deepseek.com/zh-cn/quick_start/pricing):
      * 高峰 = 北京时间周一至周五 9:00-12:00、14:00-18:00;其余(含整个周末、夜间)全为空闲。
      */
+    /**
+     * 法定节假日(国务院办公厅 2026 年放假安排,国办发明电〔2025〕7 号)。
+     * DeepSeek 官方:调休上班的周末、中国法定节假日全天均按空闲时段计费。
+     * 调休上班的周末本身就是周六/周日,已被周末规则覆盖;这里只需补"工作日里的假期"。
+     */
+    private val HOLIDAYS = setOf(
+        "01-01", "01-02", "01-03",                                   // 元旦
+        "02-15", "02-16", "02-17", "02-18", "02-19", "02-20",
+        "02-21", "02-22", "02-23",                                   // 春节
+        "04-04", "04-05", "04-06",                                   // 清明
+        "05-01", "05-02", "05-03", "05-04", "05-05",                 // 劳动节
+        "06-19", "06-20", "06-21",                                   // 端午
+        "09-25", "09-26", "09-27",                                   // 中秋
+        "10-01", "10-02", "10-03", "10-04", "10-05", "10-06", "10-07", // 国庆
+    )
+
+    /** 北京时间当天是否法定节假日 */
+    fun isHoliday(timeSec: Long): Boolean {
+        val bj = Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
+        bj.timeInMillis = timeSec * 1000
+        val md = "%02d-%02d".format(bj.get(Calendar.MONTH) + 1, bj.get(Calendar.DAY_OF_MONTH))
+        return md in HOLIDAYS
+    }
+
     fun isPeak(timeSec: Long): Boolean {
+        if (isHoliday(timeSec)) return false
         val bj = Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
         bj.timeInMillis = timeSec * 1000
         val hour = bj.get(Calendar.HOUR_OF_DAY)
