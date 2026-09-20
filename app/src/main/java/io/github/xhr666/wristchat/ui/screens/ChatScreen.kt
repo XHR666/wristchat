@@ -4,6 +4,7 @@ import android.widget.TextView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
@@ -348,16 +350,40 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         (dialogView.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.apply {
             setWindowAnimations(0)
             setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            setDimAmount(0.75f)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT)
         }
     }
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+    // 底层:吃掉落在空白处的触摸,避免手势穿透到下层页面(否则会闪出空白页的黑块)。
+    // 必须放在内容"下面",否则会挡住工具栏按钮与输入框。
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { } },
+    )
+    // 圆屏:工具栏下移并按其垂直中心位置算出左右内缩,否则贴角的按钮会落在圆外(看不到)
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+    val w = maxWidth
+    val h = maxHeight
+    val topPad = 32.dp
+    val barH = 46.dp
+    val barInset = roundInset(w, h, topPad + barH / 2)
     Column(
         Modifier
             .fillMaxSize()
-            .background(c.bg)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(top = topPad, bottom = 6.dp),
     ) {
         // 工具栏固定高度:键盘再高也先保证返回/发送/粘贴/图片这几个键在屏幕上
-        Row(Modifier.fillMaxWidth().height(46.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(barH)
+                .padding(horizontal = barInset + 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             SmallAction("‹") { closeWithSave() }
             Text(if (attachNames.isNotEmpty()) "发送图片" else "输入消息", color = c.text, fontSize = 14.sp,
                 modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -408,7 +434,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         }
         hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, maxLines = 1) }
         AndroidView(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp),
             factory = { cx ->
                 android.widget.EditText(cx).apply {
                     layoutParams = android.view.ViewGroup.LayoutParams(
@@ -448,6 +474,8 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         imm.showSoftInput(edit, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
     }
 
+
+    }
     if (visionAsk) {
         WConfirm("需要视觉模型", "图片需要 deepseek-flash(旧名 v4-flash / vision-exp 会自动路由)。\n切换当前对话模型?",
             okText = "切换", onOk = {
@@ -456,5 +484,6 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
                 galleryOpen = true
             }, onCancel = { visionAsk = false })
     }
+}
 }
 }
