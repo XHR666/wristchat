@@ -94,9 +94,12 @@ class SessionStore(private val context: Context) {
                     totalCost = o.optDouble("totalCost"),
                     msgCount = msgs.length(),
                 ))
-            } catch (e: Exception) { /* 跳过坏文件 */ }
+            } catch (e: Exception) {
+                AppLog.i("sess", "bad file ${f.name}")
+            }
         }
         out.sortByDescending { it.updatedAt }
+        AppLog.i("sess", "briefs=${out.size} files=${files.size}")
         return out
     }
 
@@ -199,7 +202,7 @@ class SessionStore(private val context: Context) {
     fun totalSizeBytes(): Long =
         dir.listFiles()?.sumOf { it.length() } ?: 0L
 
-    /** 会话数量上限:超出后删除最旧的(默认 20) */
+    /** 会话数量上限:仅统计用,不自动删除(用户数据优先,删除只由用户手动触发) */
     fun enforceLimit(max: Int = 20) {
         try {
             val files = dir.listFiles()?.filter { it.name.endsWith(".json") && !it.name.endsWith(".tmp") } ?: return
@@ -211,7 +214,6 @@ class SessionStore(private val context: Context) {
     fun create(title: String = "新会话"): Session {
         val s = Session(id = UUID.randomUUID().toString().replace("-", "").take(16), title = title, createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis())
         save(s)
-        enforceLimit()
         return s
     }
 

@@ -243,6 +243,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 提示只显示一次:2.5 秒后自动清空(否则页面重组会重复弹) */
+    private fun flashStatus(text: String) {
+        _status.value = text
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(2500)
+            if (_status.value == text) _status.value = null
+        }
+    }
+
     private fun pushLocal(text: String) {
         val s = _session.value ?: return
         s.messages.add(ChatMessage(role = "assistant", content = text))
@@ -265,6 +274,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         sessionStore.save(s)
         _session.value = s
         clearDraft()   // 纯图片消息也要清掉草稿文件,否则下次启动会把旧文本恢复出来
+        refreshSessions()   // 立刻让左侧列表包含这个会话
         _sending.value = true
 
         viewModelScope.launch {
@@ -288,9 +298,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     s.messages.add(ai)
                     sessionStore.save(s)
                     _session.value = s
-                    _status.value = if (result.cost > 0) "消耗 ¥%.4f".format(result.cost) else null
+                    _status.value = null   // 不再弹"消耗 ¥x"提示
                     if (result.memoryOps.isNotEmpty()) {
-                        _status.value = "已更新 ${result.memoryOps.size} 条记忆"
+                        flashStatus("已更新 ${result.memoryOps.size} 条记忆")
                     }
                     refreshSessions()
                     maybeAutoTitle(s, trimmed, result.content)

@@ -25,6 +25,8 @@ import java.util.Locale
 @Composable
 fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () -> Unit) {
     val sessions by vm.sessions.observeAsState(emptyList())
+    val currentSession by vm.session.observeAsState()
+    val currentId = currentSession?.id
     val currentPage = LocalCurrentPage.current
     val listState = rememberLazyListState()
     val c = LocalWrist.current
