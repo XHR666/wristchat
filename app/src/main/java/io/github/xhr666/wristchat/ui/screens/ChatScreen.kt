@@ -265,12 +265,18 @@ private fun MsgImage(name: String) {
 fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: SettingsStore) {
     val ctx = LocalContext.current
     val c = LocalWrist.current
-    if (text.contains("$")) {
-        // 数学/含公式:WebView(marked + KaTeX)
-        AndroidView(
-            factory = { KatexWebView(it).apply { layoutParams = android.view.ViewGroup.LayoutParams(
-                (175 * ctx.resources.displayMetrics.density).toInt(), android.view.ViewGroup.LayoutParams.WRAP_CONTENT) } },
-            update = { it.render(text, "#%06X".format(0xFFFFFF and c.text.toArgbCompat())) },
+    if (io.github.xhr666.wristchat.ui.chat.Latex.hasMath(text)) {
+        // 公式改原生渲染(不依赖 WebView/KaTeX/字体):任何情况下都看得见
+        Text(
+            io.github.xhr666.wristchat.ui.chat.Latex.pretty(text),
+            color = c.text,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            textAlign = when (settings.textAlignMode) {
+                "center" -> androidx.compose.ui.text.style.TextAlign.Center
+                "right" -> androidx.compose.ui.text.style.TextAlign.End
+                else -> androidx.compose.ui.text.style.TextAlign.Start
+            },
         )
     } else {
         AndroidView(

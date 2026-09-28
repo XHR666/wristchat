@@ -148,6 +148,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearDraft() {
+        // 关键:取消挂起的 400ms 防抖写回,否则刚发送的内容会被写回草稿(重启后"复活")
+        draftSaveJob?.cancel()
+        draftSaveJob = null
         _draft.value = ""
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             io.github.xhr666.wristchat.data.DraftStore.clear(getApplication())
