@@ -33,6 +33,13 @@ class WristChatApp : Application() {
     /** 应用是否在前台:后台/息屏时不判定 ANR(否则主线程空闲会被误报成卡死) */
     @Volatile
     var appVisible = false
+    private var visibleBeater: (() -> Unit)? = null
+
+    /** Activity 回到前台时调用:恢复心跳 */
+    fun onBecameVisible() {
+        appVisible = true
+        visibleBeater?.invoke()
+    }
 
     private fun installAnrWatchdog() {
         val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -67,12 +74,14 @@ class WristChatApp : Application() {
         t.isDaemon = true
         t.start()
         // 主线程每 2 秒打一次心跳;卡死则心跳停止,看门狗可感知
+        // 只在可见时打心跳:后台不再每 2 秒唤醒主线程(省电)
         val beat = object : Runnable {
             override fun run() {
                 mainTick = System.currentTimeMillis()
-                mainHandler.postDelayed(this, 2000)
+                if (appVisible) mainHandler.postDelayed(this, 2000)
             }
         }
+        visibleBeater = { if (appVisible) mainHandler.post(beat) }
         mainHandler.post(beat)
     }
 

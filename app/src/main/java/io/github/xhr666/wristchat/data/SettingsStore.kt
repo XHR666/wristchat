@@ -94,6 +94,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_THINKING, true)
         set(v) = prefs.edit().putBoolean(KEY_THINKING, v).apply()
 
+    /** 文字对齐:left / center / right */
+    var textAlignMode: String
+        get() = prefs.getString(KEY_TEXT_ALIGN, "left") ?: "left"
+        set(v) = prefs.edit().putString(KEY_TEXT_ALIGN, v).apply()
+
+    /** 每行从右往左读(仅影响文字排版;公式仍是 LaTeX 正常顺序) */
+    var textRtl: Boolean
+        get() = prefs.getBoolean(KEY_TEXT_RTL, false)
+        set(v) = prefs.edit().putBoolean(KEY_TEXT_RTL, v).apply()
+
     var reasoningEffort: String
         get() = prefs.getString(KEY_EFFORT, "low") ?: "low"
         set(v) = prefs.edit().putString(KEY_EFFORT, v).apply()
@@ -311,6 +321,8 @@ Requirements:
 </conversation>
 """.trimIndent()
         private const val KEY_THINKING = "thinking"
+        private const val KEY_TEXT_ALIGN = "text_align"
+        private const val KEY_TEXT_RTL = "text_rtl"
         private const val KEY_EFFORT = "effort"
         private const val KEY_TEMPERATURE = "temperature"
         private const val KEY_TOPP = "topp"

@@ -42,11 +42,13 @@ private val CATS = listOf(
     Cat("sessions", "会话与导入", "导入 / 管理"),
     Cat("storage", "存储与缓存", "清理 / 占用"),
     Cat("update", "更新与同步", "检查更新 / 手机同步"),
-    Cat("security", "安全与外观", "密码 / 主题 / 缩放"),
+    Cat("prefs", "偏好设置", "界面偏好 / 主题"),
+    Cat("security", "安全", "启动密码 / 免密次数"),
     Cat("about", "关于", "版本 / 许可 / 日志"),
 )
 private val CAT_TITLE = CATS.associate { it.key to it.title } +
-    mapOf("mp_models" to "默认模型", "mp_prompts" to "提示词")
+    mapOf("mp_models" to "默认模型", "mp_prompts" to "提示词",
+        "pref_ui" to "界面偏好设置", "pref_theme" to "主题")
 
 @Composable
 fun SettingsMenuScreen(settings: SettingsStore) {
@@ -123,6 +125,9 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                         "security" -> securityRows(settings, dialogs)
                         "about" -> aboutRows(settings, vm, dialogs) { logPage = it }
                     "models_prompts" -> modelsPromptsRows(settings, dialogs) { subPage = it }
+                    "prefs" -> prefRows(dialogs) { subPage = it }
+                    "pref_ui" -> uiPrefRows(settings, dialogs)
+                    "pref_theme" -> themePrefRows(settings, dialogs)
                     "mp_models" -> defaultModelRows(settings, dialogs)
                     "mp_prompts" -> promptRows(settings, dialogs)
                     }
@@ -155,6 +160,27 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
 }
 
 // ---------- 各行内容 ----------
+
+/** 偏好设置:界面偏好 + 主题 */
+private fun LazyListScope.prefRows(d: DialogController, openSub: (String) -> Unit) {
+    item { WCard("界面偏好设置", "文字对齐 / 逐行阅读顺序") { openSub("pref_ui") } }
+    item { WCard("主题", "配色 / 显示大小") { openSub("pref_theme") } }
+}
+
+/** 界面偏好:对齐 + 逐行右起阅读(公式不受影响) */
+private fun LazyListScope.uiPrefRows(s: SettingsStore, d: DialogController) {
+    item { WCard("文字对齐", when (s.textAlignMode) { "center" -> "居中"; "right" -> "右对齐"; else -> "左对齐" }) {
+        val opts = listOf("左对齐", "居中", "右对齐")
+        val ids = listOf("left", "center", "right")
+        d.choice("文字对齐", opts, ids.indexOf(s.textAlignMode).coerceAtLeast(0)) { i -> s.textAlignMode = ids[i] }
+    } }
+    item { WToggle("每行从右往左读", s.textRtl) { s.textRtl = it } }
+    item { WCard("说明", "阅读顺序只影响普通文字排版;数学公式仍按 LaTeX 正常顺序渲染") }
+}
+
+/** 主题:配色 + 显示大小(从"安全与外观"挪过来) */
+private fun LazyListScope.themePrefRows(s: SettingsStore, d: DialogController) {
+}
 
 /** 默认模型与提示词:两个入口 */
 private fun LazyListScope.modelsPromptsRows(s: SettingsStore, d: DialogController, openSub: (String) -> Unit) {
@@ -534,24 +560,6 @@ private fun LazyListScope.securityRows(s: SettingsStore, d: DialogController) {
         } else d.confirm("关闭密码", "关闭后启动不再需要密码", ok = "关闭") { s.passwordEnabled = false }
     } }
     item { WCard("免密次数", s.graceDefault.toString()) { d.num("未来 N 次免密(0=每次都输)", s.graceDefault.toFloat(), 0f, 50f) { s.graceDefault = it.toInt(); s.graceLeft = it.toInt() } } }
-    item {
-        val act = LocalContext.current as? android.app.Activity
-        WCard("主题", themeName(s.theme)) {
-            val ids = listOf("light", "dark", "amoled")
-            d.choice("主题", ids.map { themeName(it) }, ids.indexOf(s.theme).coerceAtLeast(0)) { i ->
-                s.theme = ids[i]; act?.recreate()
-            }
-        }
-    }
-    item {
-        val act = LocalContext.current as? android.app.Activity
-        WCard("显示大小", "%.2f".format(s.displayScale) + if (s.displayScale == 1f) " (默认)" else "") {
-            val opts = (0 until 9).map { 0.9f + it * 0.05f }
-            d.choice("显示大小(即时生效)", opts.map { "%.2f".format(it) }, opts.indexOf(s.displayScale).coerceAtLeast(0)) { i ->
-                s.displayScale = opts[i]; act?.recreate()
-            }
-        }
-    }
 }
 
 private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController, openLog: (String) -> Unit) {

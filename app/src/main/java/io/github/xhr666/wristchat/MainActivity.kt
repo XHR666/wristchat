@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        (application as? WristChatApp)?.appVisible = true
+        (application as? WristChatApp)?.onBecameVisible()
         val away = if (stoppedAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - stoppedAt
         // 配置变更(主题/缩放 recreate)与短时离开(选图片等)不重新上锁;退后台超过 30 秒则重新校验
         if (!isChangingConfigurations && away > 30_000L) {
@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // 不再常亮:按系统息屏策略走(省电)
         // 用现代的 WindowInsets 控制器(旧的 systemUiVisibility 沉浸式 flag 在 Android 11 上
         // 与输入法同屏时容易出现光标/预览错位,正是我们遇到的键盘 bug)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)

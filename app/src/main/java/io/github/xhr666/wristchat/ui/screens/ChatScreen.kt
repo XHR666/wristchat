@@ -113,7 +113,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                 contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = LocalRoundBottom.current),
             ) {
                 itemsIndexed(messages, key = { i, m -> "$i-${m.ts}" }) { _, m ->
-                    MessageItem(m, markwon) { text ->
+                    MessageItem(m, markwon, settings) { text ->
                         // 翻译:用翻译模型 + 翻译提示词(变量自动替换)
                         val lang = java.util.Locale.getDefault().displayLanguage
                         val p = vm.settings.promptTranslate
@@ -168,7 +168,7 @@ private fun detailsText(d: io.github.xhr666.wristchat.ui.chat.ConvDetails): Stri
 
 /** 消息气泡 */
 @Composable
-fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon, onTranslate: ((String) -> Unit)? = null) {
+fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon, settings: SettingsStore, onTranslate: ((String) -> Unit)? = null) {
     val c = LocalWrist.current
     var expanded by remember { mutableStateOf(false) }
     val isUser = m.role == "user"
@@ -208,7 +208,7 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
                     Text("共 ${m.imgs.size} 张图片", color = LocalWrist.current.hint, fontSize = 10.sp,
                         modifier = Modifier.padding(bottom = 2.dp))
                 }
-                if (m.content.isNotBlank() || m.imgs.isEmpty()) MsgContent(m.content, isUser, markwon)
+                if (m.content.isNotBlank() || m.imgs.isEmpty()) MsgContent(m.content, isUser, markwon, settings)
             }
         }
         if (!isUser) {
@@ -262,7 +262,7 @@ private fun MsgImage(name: String) {
 }
 
 @Composable
-fun MsgContent(text: String, isUser: Boolean, markwon: Markwon) {
+fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: SettingsStore) {
     val ctx = LocalContext.current
     val c = LocalWrist.current
     if (text.contains("$")) {
@@ -278,6 +278,16 @@ fun MsgContent(text: String, isUser: Boolean, markwon: Markwon) {
                 TextView(ctx2).apply {
                     setTextColor(c.text.toArgbCompat())
                     textSize = 14f
+                    // 界面偏好:对齐方式 + 每行从右往左读(仅文字;公式仍走 WebView)
+                    textAlignment = when (settings.textAlignMode) {
+                        "center" -> android.view.View.TEXT_ALIGNMENT_CENTER
+                        "right" -> android.view.View.TEXT_ALIGNMENT_VIEW_END
+                        else -> android.view.View.TEXT_ALIGNMENT_VIEW_START
+                    }
+                    if (settings.textRtl) {
+                        textDirection = android.view.View.TEXT_DIRECTION_RTL
+                        gravity = android.view.Gravity.END
+                    }
                 }
             },
             update = { tv -> tv.text = markwon.toMarkdown(text) },

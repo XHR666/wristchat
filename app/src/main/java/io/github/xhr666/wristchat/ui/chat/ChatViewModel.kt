@@ -66,10 +66,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         _draft.value = io.github.xhr666.wristchat.data.DraftStore.load(app)
         _quickInputs.value = settings.getQuickInputs()
-        SkillStoreProviderInject.refresh(skillStore)
-        // 冷启动只解析最近一个会话文件(其余在进入负一屏/设置页时异步加载),避免首帧卡顿
+        // 冷启动只解析最近一个会话文件(其余异步);技能扫描也挪到 IO,避免首帧卡顿
         loadOrCreateSession()
-        refreshSessions()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            SkillStoreProviderInject.refresh(skillStore)
+            refreshSessions()
+        }
     }
 
     fun loadOrCreateSession() {

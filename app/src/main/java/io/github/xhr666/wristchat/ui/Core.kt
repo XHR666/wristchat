@@ -76,6 +76,9 @@ object RotaryBus {
         lastEventAt = System.currentTimeMillis()
     }
     fun drain(): Int = acc.getAndSet(0)
+
+    /** 事件信号(conflated):有转动才唤醒列表,平时不出帧、不耗电 */
+    val signals = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     /** 表冠是否已停手(用于触发惯性滑行) */
     fun idle(ms: Long = 110): Boolean = System.currentTimeMillis() - lastEventAt > ms
 }
@@ -84,25 +87,22 @@ object RotaryBus {
 fun RotaryList(listState: LazyListState, enabled: Boolean) {
     LaunchedEffect(enabled) {
         if (!enabled) return@LaunchedEffect
-        var velocity = 0f                                  // 平滑后的速度(px/ms)
+        var velocity = 0f
         var flingJob: kotlinx.coroutines.Job? = null
-        while (true) {
-            withFrameNanos { }                              // 每帧消费一次累积量
-            val d = RotaryBus.drain()
-            if (d != 0) {
-                flingJob?.cancel(); flingJob = null          // 新的转动立刻接管惯性
-                val px = d.coerceIn(-1200, 1200)
+        // 事件驱动:不再用 withFrameNanos 常驻循环(那会让界面持续出帧,白耗电)
+        RotaryBus.signals.collect {
+            flingJob?.cancel(); flingJob = null
+            val px = RotaryBus.drain().coerceIn(-1200, 1200)
+            if (px != 0) {
                 listState.dispatchRawDelta(px.toFloat())
                 velocity = 0.65f * velocity + 0.35f * (px / 16.7f)
-            } else if (velocity != 0f && RotaryBus.idle()) {
-                // 官方 rotaryScrollable 的做法:松手后按最后速度滑行一段(惯性/滑行)
-                val v = velocity
-                velocity = 0f
-                if (kotlin.math.abs(v) > 0.5f) {
-                    val distance = (v * 150f).coerceIn(-1800f, 1800f)
-                    flingJob = launch {
+                flingJob = launch {
+                    kotlinx.coroutines.delay(110)
+                    val v = velocity
+                    velocity = 0f
+                    if (kotlin.math.abs(v) > 0.5f) {
                         runCatching {
-                            listState.animateScrollBy(distance,
+                            listState.animateScrollBy((v * 150f).coerceIn(-1800f, 1800f),
                                 androidx.compose.animation.core.tween(
                                     300, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
                         }
@@ -113,11 +113,6 @@ fun RotaryList(listState: LazyListState, enabled: Boolean) {
     }
 }
 
-/**
- * 焦点缩放/高亮:按"自身中心离屏幕中心的距离"自动缩放并调整亮度。
- * 中间那一项最大最亮,越靠上/下越小越暗(wear ScalingLazyColumn 的视觉语义)。
- * 用 onGloballyPositioned 记录位置 + graphicsLayer 绘制阶段读取,滚动时不触发重组。
- */
 @Composable
 fun Modifier.centerFocus(maxShrink: Float = 0.14f, maxDim: Float = 0.45f): Modifier {
     val scale = remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
