@@ -160,6 +160,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshQuickInputs() { _quickInputs.value = settings.getQuickInputs() }
 
     fun newSession() {
+        // 已经在一个空的新会话里就不要再建一个(否则会堆出一串空会话)
+        val cur = _session.value
+        if (cur != null && cur.messages.isEmpty() && cur.title == "新会话") return
         val s = sessionStore.create()
         _session.value = s
         _title.value = s.title

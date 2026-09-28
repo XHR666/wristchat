@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,6 +48,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
     val status by vm.status.observeAsState()
     val quickInputs by vm.quickInputs.observeAsState(emptyList())
     var quickPanel by remember { mutableStateOf(false) }
+    // 设置里改了快捷输入 → 聊天页立刻刷新(原来要重启应用)
+    LaunchedEffect(settings.rev) { vm.refreshQuickInputs() }
     var fullscreenInput by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var newSessionAsk by remember { mutableStateOf(false) }
@@ -89,9 +92,12 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                         .fillMaxWidth()
                         .background(c.surface)
                         .border(1.dp, c.border)
+                        // 限高 + 可滚动:快捷输入再多也不会占满屏幕
+                        .heightIn(max = 150.dp)
+                        .verticalScroll(androidx.compose.foundation.rememberScrollState())
                         .padding(vertical = 4.dp),
                 ) {
-                    quickInputs.take(6).forEach { q ->
+                    quickInputs.forEach { q ->
                         Text(q, color = c.text, fontSize = 13.sp, maxLines = 1,
                             modifier = Modifier
                                 .fillMaxWidth()

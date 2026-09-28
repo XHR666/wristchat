@@ -58,51 +58,30 @@ h1,h2,h3,h4{margin:8px 0 4px}
 </style>
 </head><body></body>
 <script>
-function renderMathInNode(node){
-  var textNodes=[];
-  var walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT,null);
-  var n; while(n=walker.nextNode()) textNodes.push(n);
-  textNodes.forEach(function(t){
+function render(md){
+  // 先把各种数学分隔符抽成占位符(块级优先),这样跨段落/跨节点的公式也能正确渲染
+  var store=[];
+  md = String(md).replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^\$\n]+?)\$/g,
+    function(m,b1,b2,i1,i2){
+      var expr = (b1!==undefined)?b1:(b2!==undefined)?b2:(i1!==undefined)?i1:i2;
+      var display = (b1!==undefined)||(b2!==undefined);
+      store.push({e:expr,d:display});
+      return 'MATHX'+(store.length-1)+'X';
+    });
+  document.body.innerHTML = marked.parse(md);
+  var walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null);
+  var nodes=[];var n;while(n=walker.nextNode())nodes.push(n);
+  nodes.forEach(function(t){
     var s=t.nodeValue;
-    if(!s||s.indexOf('$')===-1) return;
-    // 块级 $$...$$
-    var out='';
-    var i=0;
-    while(i<s.length){
-      var start=s.indexOf('$$',i);
-      if(start===-1){out+=s.slice(i);break}
-      var end=s.indexOf('$$',start+2);
-      if(end===-1){out+=s.slice(i);break}
-      out+=s.slice(i,start);
-      var expr=s.slice(start+2,end);
-      try{out+=katex.renderToString(expr,{displayMode:true,throwOnError:false})}catch(e){out+='$$'+expr+'$$'}
-      i=end+2;
-    }
-    // 行内 $...$
-    if(out.indexOf('$')!==-1){
-      var out2='';var j=0;
-      while(j<out.length){
-        var st=out.indexOf('$',j);
-        if(st===-1){out2+=out.slice(j);break}
-        var en=out.indexOf('$',st+1);
-        if(en===-1){out2+=out.slice(j);break}
-        // 避免渲染成 HTML 标签属性的 $
-        out2+=out.slice(j,st);
-        var ex=out.slice(st+1,en);
-        try{out2+=katex.renderToString(ex,{displayMode:false,throwOnError:false})}catch(e){out2+='$'+ex+'$'}
-        j=en+1;
-      }
-      out=out2;
-    }
+    if(!s||s.indexOf('MATHX')===-1) return;
     var span=document.createElement('span');
-    span.innerHTML=out;
+    span.innerHTML = s.replace(/MATHX(\d+)X/g,function(mm,k){
+      var it=store[+k]; if(!it) return mm;
+      try { return katex.renderToString(it.e,{displayMode:it.d,throwOnError:false}); }
+      catch(err) { return it.d ? ('$$'+it.e+'$$') : ('$'+it.e+'$'); }
+    });
     t.parentNode.replaceChild(span,t);
   });
-}
-function render(md){
-  var body=document.body;
-  body.innerHTML=marked.parse(md);
-  renderMathInNode(body);
 }
 </script></html>
         """

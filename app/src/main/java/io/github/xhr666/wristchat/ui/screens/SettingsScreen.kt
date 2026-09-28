@@ -163,12 +163,25 @@ private fun LazyListScope.modelsPromptsRows(s: SettingsStore, d: DialogControlle
     item { WCard("说明", "每类任务各用一个模型;提示词里的 {变量} 会被自动替换") }
 }
 
+/** 全局模型设置:一次把六个任务模型都设为同一个 */
+private fun LazyListScope.globalModelRow(s: SettingsStore, d: DialogController) {
+    item { WCard("全局模型设置", "把下面 6 个模型全部设为同一个") {
+        val ms = Providers.resolve(s).models.ifEmpty { listOf("deepseek-flash") }
+        d.choice("全局模型", ms, ms.indexOf(s.model).coerceAtLeast(0)) { i ->
+            val m = ms[i]
+            s.model = m; s.modelQuick = m; s.modelTitle = m
+            s.modelTranslate = m; s.modelOcr = m; s.modelCompress = m
+        }
+    } }
+}
+
 /** 六个任务模型 */
 private fun LazyListScope.defaultModelRows(s: SettingsStore, d: DialogController) {
     fun choose(title: String, cur: String, apply: (String) -> Unit) {
         val ms = Providers.resolve(s).models.ifEmpty { listOf("deepseek-flash") }
         d.choice(title, ms, ms.indexOf(cur).coerceAtLeast(0)) { i -> apply(ms[i]) }
     }
+    globalModelRow(s, d)
     item { WCard("聊天模型", s.model) { choose("聊天模型", s.model) { s.model = it } } }
     item { WCard("快速模型", s.modelQuick) { choose("快速模型", s.modelQuick) { s.modelQuick = it } } }
     item { WCard("标题总结模型", s.modelTitle) { choose("标题总结模型", s.modelTitle) { s.modelTitle = it } } }
@@ -212,19 +225,14 @@ private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
 }
 
 private fun LazyListScope.modelRows(s: SettingsStore, d: DialogController) {
-    item { val locked = s.apiKey.isBlank()
-        WCard(if (locked) "模型(需先填 Key)" else "模型", s.model) {
-            if (locked) d.text("提示", "请先填写 API Key")
-            else { val ms = Providers.resolve(s).models.ifEmpty { listOf(s.model) }
-                d.choice("模型", ms, ms.indexOf(s.model).coerceAtLeast(0)) { i -> s.model = ms[i] } }
-        }
-    }
+    // 模型选择已挪到「默认模型与提示词 → 默认模型/全局模型设置」
     item { WToggle("思考模式(深度思考)", s.thinkingEnabled) { s.thinkingEnabled = it } }
     item { WCard("思考强度", s.reasoningEffort) { val o = listOf("low", "high", "max")
         d.choice("思考强度", o, o.indexOf(s.reasoningEffort).coerceAtLeast(0)) { i -> s.reasoningEffort = o[i] } } }
     item { WCard("温度", s.temperature.toString() + "\n(高级参数:不要修改,除非你知道自己在干什么)") { d.num("温度(0-2)", s.temperature, 0f, 2f) { s.temperature = it } } }
     item { WCard("Top P", s.topP.toString() + "\n(高级参数:不要修改,除非你知道自己在干什么)") { d.num("Top P(0-1)", s.topP, 0f, 1f) { s.topP = it } } }
-    item { WCard("最大输出 tokens", s.maxTokens.toString()) { d.num("max tokens", s.maxTokens.toFloat(), 256f, 65536f) { s.maxTokens = it.toInt() } } }
+    item { WCard("最大输出 tokens", if (s.maxTokens <= 0) "不限制(留空)" else s.maxTokens.toString()) {
+        d.num("max tokens(0=不限制)", s.maxTokens.toFloat(), 0f, 65536f) { s.maxTokens = it.toInt() } } }
     item { WCard("上下文窗口", s.contextWindow.toString()) { d.num("上下文窗口", s.contextWindow.toFloat(), 10000f, 2000000f) { s.contextWindow = it.toInt() } } }
     item { WCard("压缩阈值 %", "${s.compressThreshold}%") { d.num("压缩阈值(50-95)", s.compressThreshold.toFloat(), 50f, 95f) { s.compressThreshold = it.toInt() } } }
     item { WCard("自定义系统 Prompt", if (s.customPrompt.isBlank()) "(空)" else "已设置") { d.input("自定义 Prompt", s.customPrompt, ml = true) { s.customPrompt = it } } }
@@ -233,7 +241,9 @@ private fun LazyListScope.modelRows(s: SettingsStore, d: DialogController) {
 
 private fun LazyListScope.quickRows(s: SettingsStore, d: DialogController) {
     item { WCard("＋ 添加快捷输入", "单行,上限 20") { quickEditDialog(s, d, null, null) } }
-    s.getQuickInputs().forEachIndexed { i, q ->
+    // 以设置版本号为 key:增删改后立刻刷新(原来要退出再进才看到)
+    val quick = s.getQuickInputs()
+    quick.forEachIndexed { i, q ->
         item { WCard(q.take(26), "点击编辑") { quickEditDialog(s, d, q, i) } }
     }
 }

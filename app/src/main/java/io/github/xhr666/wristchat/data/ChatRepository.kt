@@ -125,7 +125,7 @@ class ChatRepository(
         val body = JSONObject().apply {
             put("model", model)
             put("messages", messages)
-            put("max_tokens", settings.maxTokens)
+            if (settings.maxTokens > 0) put("max_tokens", settings.maxTokens)   // 0 = 不限制(留空)
             // 官方文档(guides/thinking_mode):
             //   思考开关 = {"thinking":{"type":"enabled"|"disabled"}}(默认 enabled,必须显式 disabled 才能关)
             //   思考强度 = 顶层 "reasoning_effort": "low"|"high"|"max"(原来误写在 thinking 里,一直没生效)
