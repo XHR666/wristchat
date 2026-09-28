@@ -44,8 +44,25 @@ object Latex {
             Regex("\\\\[a-zA-Z]+").containsMatchIn(s)
 
     /** 把 LaTeX 转成可读文本 */
+    /** ```lang ... ``` 代码围栏 */
+    private val fence = Regex("```[a-zA-Z]*\\n([\\s\\S]*?)```")
+
     fun pretty(input: String): String {
         var s = input
+        // ① 代码围栏:取块内内容(模型经常把整份 LaTeX 文档放在 ```latex 里)
+        s = fence.replace(s) { m -> m.groupValues[1] }
+        s = s.replace("```", "")
+        // ② LaTeX 文档脚手架:这些不是公式内容,必须先去掉(否则会显示成 article/amsmath/document 残渣)
+        s = Regex("\\\\documentclass(\\[[^\\]]*\\])?\\{[^}]*\\}").replace(s, "")
+        s = Regex("\\\\usepackage(\\[[^\\]]*\\])?\\{[^}]*\\}").replace(s, "")
+        s = Regex("\\\\begin\\{(document|equation\\*?|align\\*?|aligned|gather\\*?|displaymath|math|split|array|cases|matrix|pmatrix|bmatrix)\\}").replace(s, "")
+        s = Regex("\\\\end\\{(document|equation\\*?|align\\*?|aligned|gather\\*?|displaymath|math|split|array|cases|matrix|pmatrix|bmatrix)\\}").replace(s, "")
+        s = Regex("\\\\label\\{[^}]*\\}").replace(s, "")
+        s = Regex("\\\\tag\\{[^}]*\\}").replace(s, "")
+        s = s.replace("\\hline", "")
+        // ③ Markdown 轻处理(标题/加粗标记不要显示成符号)
+        s = s.replace("**", "").replace("__", "")
+        s = Regex("(?m)^#{1,6}\\s*").replace(s, "")
         // 去除数学分隔符
         s = s.replace("$$", "").replace("\\[", "").replace("\\]", "")
             .replace("\\(", "").replace("\\)", "")
