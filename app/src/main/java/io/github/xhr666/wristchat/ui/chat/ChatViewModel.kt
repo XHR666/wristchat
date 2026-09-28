@@ -88,6 +88,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 负一屏选择会话(草稿保留):单文件解析,切换后会话完整加载 */
     fun setCurrentSession(id: String) {
+        // 从"空的新会话"切走时,把那个空会话删掉,列表里不再显示
+        val old = _session.value
+        if (old != null && old.id != id && old.messages.isEmpty() && old.title == "新会话") {
+            sessionStore.delete(old.id)
+        }
         val s = sessionStore.load(id) ?: return
         _session.value = s
         _title.value = s.title

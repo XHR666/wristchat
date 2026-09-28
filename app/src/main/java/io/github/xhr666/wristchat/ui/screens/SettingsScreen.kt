@@ -418,6 +418,20 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
             launchInstall(f)
         }
 
+        // 双保险:授权页返回时如果没收到 ActivityResult(例如从最近任务返回),
+        // 轮询检测到已授权也自动安装一次,不需要用户再点
+        LaunchedEffect(pendingApk) {
+            val f = pendingApk ?: return@LaunchedEffect
+            repeat(150) {
+                kotlinx.coroutines.delay(800)
+                if (io.github.xhr666.wristchat.data.Installer.canInstall(ctx)) {
+                    pendingApk = null
+                    autoInstall = f
+                    return@LaunchedEffect
+                }
+            }
+        }
+
         WCard("检查更新", "") {
             val repo = UpdateRepository(s)
             io.github.xhr666.wristchat.data.AppLog.i("upd", "check start v=${s.versionName}")
