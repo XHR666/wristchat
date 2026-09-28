@@ -270,7 +270,7 @@ fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: Settin
         AndroidView(
             factory = { KatexWebView(it).apply { layoutParams = android.view.ViewGroup.LayoutParams(
                 (175 * ctx.resources.displayMetrics.density).toInt(), android.view.ViewGroup.LayoutParams.WRAP_CONTENT) } },
-            update = { it.render(text) },
+            update = { it.render(text, "#%06X".format(0xFFFFFF and c.text.toArgbCompat())) },
         )
     } else {
         AndroidView(

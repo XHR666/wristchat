@@ -18,6 +18,8 @@ class KatexWebView(context: Context) : WebView(context) {
         settings.domStorageEnabled = true
         settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
         settings.setTextZoom(100)
+        // 关键:WebView 默认白底,不设透明就会在深色气泡里显示成一条白块
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
         webViewClient = WebViewClient()
         webChromeClient = WebChromeClient()
         isVerticalScrollBarEnabled = false
@@ -28,12 +30,10 @@ class KatexWebView(context: Context) : WebView(context) {
         )
     }
 
-    fun render(markdown: String) {
-        val escaped = markdown
-            .replace("\\", "\\\\")
-            .replace("'", "\\'")
-            .replace("\n", "\\n")
-        evaluateJavascript("render(`$escaped`)", null)
+    fun render(markdown: String, textColorHex: String? = null) {
+        // 用 JSON 转义(模板字符串会被 JS 解析:反斜杠/`${` 都会出错)
+        val quoted = org.json.JSONObject.quote(markdown)
+        evaluateJavascript("render($quoted${if (textColorHex != null) ", '$textColorHex'" else ""})", null)
     }
 
     companion object {
@@ -45,6 +45,7 @@ class KatexWebView(context: Context) : WebView(context) {
 <script src="katex/katex.min.js"></script>
 <script src="js/marked.min.js"></script>
 <style>
+html{background:transparent}
 body{margin:6px;padding:0;color:#E8EAED;font-size:13px;line-height:1.45;word-wrap:break-word;overflow-wrap:break-word;background:transparent;overflow-x:auto;-webkit-overflow-scrolling:touch}
 p{margin:4px 0}
 pre{background:#0D1117;padding:8px;border-radius:6px;overflow-x:auto;font-size:12px}
@@ -58,7 +59,13 @@ h1,h2,h3,h4{margin:8px 0 4px}
 </style>
 </head><body></body>
 <script>
-function render(md){
+function render(md,color){
+  try{
+    if(typeof marked==='undefined'||typeof katex==='undefined'){
+      document.body.textContent=md; return;   // 库没加载:至少显示原文,不留白条
+    }
+  }catch(e){ document.body.textContent=md; return; }
+  if(color) document.body.style.color=color;
   // 先把各种数学分隔符抽成占位符(块级优先),这样跨段落/跨节点的公式也能正确渲染
   var store=[];
   md = String(md).replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^\$\n]+?)\$/g,
