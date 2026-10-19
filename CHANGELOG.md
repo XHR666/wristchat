@@ -129,3 +129,9 @@
 - ./check.sh ⇒ 17 通过 / 0 失败;assembleRelease + assembleDebug ⇒ BUILD SUCCESSFUL
 ### 未验
 - 真机观感(官方组件的长度/位置是否符合预期)
+
+## 2026-10-20 · v0.8.7(授权发布)
+- 版本:versionCode 47 / versionName 0.8.7
+- 门禁:./check.sh ⇒ 17 通过 / 0 失败
+- 内容:滚动条改用 Wear 官方 PositionIndicator(反编译确认参考应用同款)
+- 未验:真机观感
