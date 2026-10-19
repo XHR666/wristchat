@@ -85,3 +85,10 @@
 - 构建:assembleRelease ×1 + assembleDebug ×1 ⇒ BUILD SUCCESSFUL
 - 内容:KaTeX 重接(高度测量+兜底)、设置页留白与即时刷新、滚动条固定轨道+滑块、价格判据 P5、cost 诊断日志
 - 未验:真机渲染与设置页行为;累计消费金额偏差待日志对照
+
+### 发布记录(v0.8.5-rc1)
+- tag:v0.8.5(annotated) · GitHub prerelease v0.8.5-rc1 · 提交 41039a9
+- 产物:release 2703751B / debug 26450377B;sha256 文件 103B/101B
+- 发布后验证:GitHub API assets=4 全部 uploaded;下载端点第 1 次即 HTTP 206(无传播延迟);
+  release APK sha256 = 2177e0f0…(本地与发布 sha256 文件一致)
+- 授权:用户当次明确授权("发布")
