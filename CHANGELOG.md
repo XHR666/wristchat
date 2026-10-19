@@ -108,3 +108,10 @@
 - assembleRelease + assembleDebug ⇒ BUILD SUCCESSFUL;APK 内 mipmap ic_launcher 资源已更新
 ### 未验
 - 真机 KaTeX 是否恢复渲染、Markdown 行内代码显示、系统提示词生效、图标在表盘/列表中显示
+
+## 2026-10-20 · v0.8.6(授权发布)
+- 版本:versionCode 46 / versionName 0.8.6
+- 门禁:./check.sh ⇒ 17 通过 / 0 失败
+- 构建:assembleRelease + assembleDebug ⇒ BUILD SUCCESSFUL
+- 内容:KaTeX file:// 子资源授权、原生兜底符号扩展(向量/三角/圆圈运算符/空上标清理)、应用级系统提示词、应用图标替换
+- 未验:真机渲染/系统提示词/图标显示
