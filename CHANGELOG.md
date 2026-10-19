@@ -115,3 +115,17 @@
 - 构建:assembleRelease + assembleDebug ⇒ BUILD SUCCESSFUL
 - 内容:KaTeX file:// 子资源授权、原生兜底符号扩展(向量/三角/圆圈运算符/空上标清理)、应用级系统提示词、应用图标替换
 - 未验:真机渲染/系统提示词/图标显示
+
+## 2026-10-20 · 滚动条改用 Wear 官方 PositionIndicator
+### 调研(反编译参考应用)
+- 用 jadx 反编译 CE版_微思应用商店_3.7.2.apk,定位到 `ScalingLazyListStateScrollInfoProvider`
+  —— 即 Wear/Horologist 官方 PositionIndicator 的滚动信息提供器 → 参考应用用的是官方组件
+- 确认本项目依赖 wear-compose **1.4.1 已包含**`androidx.wear.compose.material.PositionIndicator`
+  (此前误判为"1.4.1 没有该组件")
+### 改动
+- ScreenScaffold:自绘滚动条 → `PositionIndicator(lazyListState, Modifier.fillMaxSize())`(短弧、自动淡入淡出、随滚动移动)
+- 自绘 `SmallScrollIndicator` 暂留未调用(避免再次误删文件结构;后续清理)
+### 已证明
+- ./check.sh ⇒ 17 通过 / 0 失败;assembleRelease + assembleDebug ⇒ BUILD SUCCESSFUL
+### 未验
+- 真机观感(官方组件的长度/位置是否符合预期)

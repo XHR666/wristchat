@@ -205,7 +205,10 @@ fun ScreenScaffold(
         // 顶部弧形时间(官方 CurvedText:文字沿圆表上沿弧线排布)
         if (showClock) CurvedClock()
         // 右侧小巧滚动进度条(仿 wear PositionIndicator,滚动时出现)
-        if (scrollIndicator != null) SmallScrollIndicator(scrollIndicator)
+        // Wear 官方 PositionIndicator(参考应用同款):短弧、自动淡入淡出、随滚动移动
+        scrollIndicator?.let { st ->
+            androidx.wear.compose.material.PositionIndicator(st, modifier = androidx.compose.ui.Modifier.fillMaxSize())
+        }
         }
         }
     }
