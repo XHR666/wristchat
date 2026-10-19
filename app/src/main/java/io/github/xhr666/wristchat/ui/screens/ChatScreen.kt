@@ -267,18 +267,40 @@ fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: Settin
     val ctx = LocalContext.current
     val c = LocalWrist.current
     if (io.github.xhr666.wristchat.ui.chat.Latex.hasMath(text)) {
-        // 公式改原生渲染(不依赖 WebView/KaTeX/字体):任何情况下都看得见
-        Text(
-            io.github.xhr666.wristchat.ui.chat.Latex.pretty(text),
-            color = c.text,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            textAlign = when (settings.textAlignMode) {
-                "center" -> androidx.compose.ui.text.style.TextAlign.Center
-                "right" -> androidx.compose.ui.text.style.TextAlign.End
-                else -> androidx.compose.ui.text.style.TextAlign.Start
-            },
-        )
+        // 公式:优先 KaTeX(美观排版);测量高度;超时未渲染则退回原生可读文本(绝不空白)
+        var webRef by remember { mutableStateOf<io.github.xhr666.wristchat.ui.chat.KatexWebView?>(null) }
+        var hPx by remember { mutableStateOf(0) }
+        var failed by remember { mutableStateOf(false) }
+        val density = ctx.resources.displayMetrics.density
+        LaunchedEffect(text) {
+            hPx = 0; failed = false
+            repeat(12) {
+                kotlinx.coroutines.delay(150)
+                val w = webRef ?: return@repeat
+                w.evaluateJavascript("Math.ceil(document.body.getBoundingClientRect().height)") { v ->
+                    val h = v.trim('"').toIntOrNull() ?: 0
+                    if (h > 0) hPx = h
+                }
+                if (hPx > 0) return@LaunchedEffect
+            }
+            if (hPx == 0) failed = true
+        }
+        if (failed) {
+            Text(
+                io.github.xhr666.wristchat.ui.chat.Latex.pretty(text),
+                color = c.text, fontSize = 14.sp, lineHeight = 20.sp,
+            )
+        } else {
+            AndroidView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(with(androidx.compose.ui.platform.LocalDensity.current) { (hPx.coerceAtMost(4000) / density).dp }),
+                factory = { ctx2 ->
+                    io.github.xhr666.wristchat.ui.chat.KatexWebView(ctx2).also { webRef = it }
+                },
+                update = { it.render(text) },
+            )
+        }
     } else {
         AndroidView(
             factory = { ctx2 ->

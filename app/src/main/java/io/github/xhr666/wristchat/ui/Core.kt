@@ -281,6 +281,17 @@ private fun SmallScrollIndicator(state: LazyListState) {
         val thumb = if (total > 0) (span * visible / total).coerceIn(18f, 60f) else 30f
         val sweep = thumb
         val start = -span / 2f + smooth * (span - thumb)  // 位置随进度移动
+        // 固定轨道(整段长度不变)+ 内部滑块随进度移动
+        drawArc(
+            color = Color.White.copy(alpha = 0.20f),
+            startAngle = -span / 2f,
+            sweepAngle = span,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(cx - r, cy - r),
+            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokePx * 0.9f, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+        )
         drawArc(
             color = Color.White.copy(alpha = 0.9f),
             startAngle = start,

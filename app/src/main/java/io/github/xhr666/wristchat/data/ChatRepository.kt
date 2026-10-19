@@ -167,6 +167,8 @@ class ChatRepository(
         )
         val now = System.currentTimeMillis() / 1000
         val cost = Pricing.cost(model, now, usage.cacheHit.toLong(), usage.cacheMiss.toLong(), usage.completionTokens.toLong())
+        // 成本诊断(不含对话内容):便于对照平台"今日消费",排查累计金额偏差
+        AppLog.i("cost", "m=$model hit=${usage.cacheHit} miss=${usage.cacheMiss} out=${usage.completionTokens} peak=${Pricing.isPeak(now)} cny=$cost")
 
         // 记忆工具调用处理(两轮)
         val toolCalls = msg.optJSONArray("tool_calls")

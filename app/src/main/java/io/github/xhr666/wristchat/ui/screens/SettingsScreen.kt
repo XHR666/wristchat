@@ -74,7 +74,7 @@ fun SettingsMenuScreen(settings: SettingsStore) {
                     contentPadding = PaddingValues(
                         start = 18.dp, end = 18.dp,
                         top = LocalListCenterPad.current,
-                        bottom = LocalListBottomPad.current + LocalRoundBottom.current),
+                        bottom = LocalListBottomPad.current + LocalRoundBottom.current + 40.dp),
                 ) {
                     itemsIndexed(CATS) { _, cat ->
                         WCard(cat.title, cat.desc) { openCat = cat.key }
@@ -113,7 +113,8 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                     contentPadding = PaddingValues(
                         start = 18.dp, end = 18.dp,
                         top = LocalListCenterPad.current,
-                        bottom = LocalListBottomPad.current + LocalRoundBottom.current)) {
+                        bottom = LocalListBottomPad.current + LocalRoundBottom.current + 40.dp)) {
+                    settings.rev   // 依赖 rev:设置改完立即重建列表内容
                     when (cat) {
                         "service" -> serviceRows(settings, dialogs)
                         "model" -> modelRows(settings, dialogs)

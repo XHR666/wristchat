@@ -87,6 +87,19 @@ class EngineeringRulesTest {
         assertFalse(t.shouldReverse(false, "普通文字"))
     }
 
+    // ---------- 计价(对照官方表折算 CNY) ----------
+
+    @Test fun `P5 单片价格与峰谷倍数`() {
+        val offSec = bjSec(2026, 10, 14, 13)   // 工作日 13:00 = 谷
+        val peakSec = bjSec(2026, 10, 14, 15)  // 工作日 15:00 = 峰
+        val off = Pricing.cost("deepseek-flash", offSec, 1_000_000, 1_000_000, 1_000_000)
+        val peak = Pricing.cost("deepseek-flash", peakSec, 1_000_000, 1_000_000, 1_000_000)
+        // 谷:0.02+1+4=5.02 元;峰:0.04+2+8=10.04 元(官方 $0.003/0.006、$0.15/0.30、$0.6/1.2 × 汇率≈7)
+        assertEquals(5.02, off, 0.001)
+        assertEquals(10.04, peak, 0.001)
+        assertEquals(2.0, peak / off, 0.0001)   // 峰价应为谷价 2 倍(回归:索引写反会红)
+    }
+
     // ---------- 计费时段(北京时间) ----------
 
     private fun bjSec(y: Int, m: Int, d: Int, h: Int, min: Int = 0): Long {
