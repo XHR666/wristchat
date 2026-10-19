@@ -180,6 +180,24 @@ private fun LazyListScope.uiPrefRows(s: SettingsStore, d: DialogController) {
 
 /** 主题:配色 + 显示大小(从"安全与外观"挪过来) */
 private fun LazyListScope.themePrefRows(s: SettingsStore, d: DialogController) {
+    item {
+        val act = LocalContext.current as? android.app.Activity
+        WCard("主题", "配色方案") {
+            val ids = listOf("light", "dark", "amoled")
+            d.choice("主题", ids.map { themeName(it) }, ids.indexOf(s.theme).coerceAtLeast(0)) { i ->
+                s.theme = ids[i]; act?.recreate()
+            }
+        }
+    }
+    item {
+        val act = LocalContext.current as? android.app.Activity
+        WCard("显示大小", "%.2f".format(s.displayScale)) {
+            val opts = (0 until 9).map { 0.9f + it * 0.05f }
+            d.choice("显示大小", opts.map { "%.2f".format(it) }, opts.indexOf(s.displayScale).coerceAtLeast(0)) { i ->
+                s.displayScale = opts[i]; act?.recreate()
+            }
+        }
+    }
 }
 
 /** 默认模型与提示词:两个入口 */

@@ -70,6 +70,23 @@ class EngineeringRulesTest {
         assertFalse(Latex.hasMath("普通中文消息,没有公式"))
     }
 
+    // ---------- 逐行从右往左(显示变换) ----------
+
+    @Test fun `A8 逐行倒序 中文`() {
+        assertEquals("?啥的发你给我", io.github.xhr666.wristchat.ui.chat.TextTransform.reversePerLine("我给你发的啥?"))
+    }
+
+    @Test fun `A9 逐行倒序 行序不变`() {
+        assertEquals("cba\ndef", io.github.xhr666.wristchat.ui.chat.TextTransform.reversePerLine("abc\nfed"))
+    }
+
+    @Test fun `A10 含公式时不做倒序`() {
+        val t = io.github.xhr666.wristchat.ui.chat.TextTransform
+        assertFalse(t.shouldReverse(true, "\\sqrt{2}"))
+        assertTrue(t.shouldReverse(true, "普通文字"))
+        assertFalse(t.shouldReverse(false, "普通文字"))
+    }
+
     // ---------- 计费时段(北京时间) ----------
 
     private fun bjSec(y: Int, m: Int, d: Int, h: Int, min: Int = 0): Long {

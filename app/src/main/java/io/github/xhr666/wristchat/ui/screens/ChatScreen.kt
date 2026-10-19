@@ -285,6 +285,10 @@ fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: Settin
                 TextView(ctx2).apply {
                     setTextColor(c.text.toArgbCompat())
                     textSize = 14f
+                    // 逐行从右往左读:纯文本消息才倒序(公式走 LaTeX 渲染分支,不受影响)
+                    val shown = if (io.github.xhr666.wristchat.ui.chat.TextTransform.shouldReverse(settings.textRtl, text)) {
+                        io.github.xhr666.wristchat.ui.chat.TextTransform.reversePerLine(text)
+                    } else text
                     // 界面偏好:对齐方式 + 每行从右往左读(仅文字;公式仍走 WebView)
                     textAlignment = when (settings.textAlignMode) {
                         "center" -> android.view.View.TEXT_ALIGNMENT_CENTER
