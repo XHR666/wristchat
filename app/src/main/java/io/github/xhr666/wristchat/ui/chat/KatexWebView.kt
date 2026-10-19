@@ -28,8 +28,18 @@ class KatexWebView(context: Context) : WebView(context) {
         settings.setTextZoom(100)
         // 关键:WebView 默认白底,不设透明就会在深色气泡里显示成一条白块
         setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        // 软件渲染:排除硬件加速合成层导致公式区域被"画丢"的可能
+        setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
         webViewClient = WebViewClient()
-        webChromeClient = WebChromeClient()
+        webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
+                // 只记录级别与位置,不记录消息内容(避免聊天内容进日志)
+                if (m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR) {
+                    io.github.xhr666.wristchat.data.AppLog.i("katex", "js-error line=${m.lineNumber()} src=${m.sourceId()?.takeLast(24)}")
+                }
+                return true
+            }
+        }
         isVerticalScrollBarEnabled = false
         isHorizontalScrollBarEnabled = false
         loadDataWithBaseURL(
@@ -51,6 +61,7 @@ class KatexWebView(context: Context) : WebView(context) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="katex/katex.min.css">
 <script src="katex/katex.min.js"></script>
+<script src="katex/contrib/auto-render.min.js"></script>
 <script src="js/marked.min.js"></script>
 <style>
 html{background:transparent}
@@ -70,36 +81,26 @@ h1,h2,h3,h4{margin:8px 0 4px}
 </style>
 </head><body></body>
 <script>
-function render(md,color){
+function render(md, color){
   try{
-    if(typeof marked==='undefined'||typeof katex==='undefined'){
-      document.body.textContent=md; return;   // 库没加载:至少显示原文,不留白条
-    }
-  }catch(e){ document.body.textContent=md; return; }
-  if(color) document.body.style.color=color;
-  // 先把各种数学分隔符抽成占位符(块级优先),这样跨段落/跨节点的公式也能正确渲染
-  var store=[];
-  md = String(md).replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^\$\n]+?)\$/g,
-    function(m,b1,b2,i1,i2){
-      var expr = (b1!==undefined)?b1:(b2!==undefined)?b2:(i1!==undefined)?i1:i2;
-      var display = (b1!==undefined)||(b2!==undefined);
-      store.push({e:expr,d:display});
-      return 'MATHX'+(store.length-1)+'X';
+    if(color) document.body.style.color = color;
+    if(typeof marked === 'undefined'){ document.body.textContent = md; return; }
+    document.body.innerHTML = marked.parse(md);
+    if(typeof renderMathInElement !== 'function' || typeof katex === 'undefined') return;
+    // 官方 auto-render:四种分隔符 + throwOnError:false(错误公式显示红色源码而非整块消失)
+    renderMathInElement(document.body, {
+      delimiters: [
+        {left:'$$', right:'$$', display:true},
+        {left:'\\[', right:'\\]', display:true},
+        {left:'$',  right:'$',  display:false},
+        {left:'\\(', right:'\\)', display:false}
+      ],
+      throwOnError: false,
+      strict: false,
+      errorColor: '#FF6B6B',
+      ignoredTags: ['script','noscript','style','textarea','pre','code']
     });
-  document.body.innerHTML = marked.parse(md);
-  var walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null);
-  var nodes=[];var n;while(n=walker.nextNode())nodes.push(n);
-  nodes.forEach(function(t){
-    var s=t.nodeValue;
-    if(!s||s.indexOf('MATHX')===-1) return;
-    var span=document.createElement('span');
-    span.innerHTML = s.replace(/MATHX(\d+)X/g,function(mm,k){
-      var it=store[+k]; if(!it) return mm;
-      try { return katex.renderToString(it.e,{displayMode:it.d,throwOnError:false}); }
-      catch(err) { return it.d ? ('$$'+it.e+'$$') : ('$'+it.e+'$'); }
-    });
-    t.parentNode.replaceChild(span,t);
-  });
+  }catch(e){ document.body.setAttribute('data-render-error','1'); }
 }
 </script></html>
         """

@@ -281,7 +281,13 @@ fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: Settin
                     val h = v.trim('"').toIntOrNull() ?: 0
                     if (h > 0) hPx = h
                 }
-                if (hPx > 0) return@LaunchedEffect
+                if (hPx > 0) {
+                    // 诊断(只记数量,不记内容):确认 KaTeX 是否真的渲染出节点
+                    w.evaluateJavascript("document.querySelectorAll('.katex').length") { n ->
+                        io.github.xhr666.wristchat.data.AppLog.i("katex", "render ok katexNodes=${n.trim('"')} height=${hPx}")
+                    }
+                    return@LaunchedEffect
+                }
             }
             if (hPx == 0) failed = true
         }

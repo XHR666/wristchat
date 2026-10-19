@@ -135,3 +135,16 @@
 - 门禁:./check.sh ⇒ 17 通过 / 0 失败
 - 内容:滚动条改用 Wear 官方 PositionIndicator(反编译确认参考应用同款)
 - 未验:真机观感
+
+## 2026-10-20 · KaTeX 稳定性加固(按排查建议逐条落实)
+### 已改
+1. `throwOnError:false` + `strict:false` + `errorColor`:错误公式显示红色源码,不再整块空白(此前已有 throwOnError,现补 strict/errorColor)
+2. 改用 **官方 `renderMathInElement`(auto-render 扩展 0.16.11)** 替换自写分隔符解析;`ignoredTags` 排除 pre/code
+3. `setLayerType(LAYER_TYPE_SOFTWARE, null)`:排除硬件加速合成层丢内容
+4. `WebChromeClient.onConsoleMessage`:JS 错误记入 app.log(仅级别+行号+源文件名,**不记消息内容**)
+5. 诊断:测高成功后记录 `katexNodes=N`(0 表示 KaTeX 未渲染、走了纯文本降级)
+6. CSS 顺序核对:katex.min.css → katex.min.js → auto-render.min.js → marked.min.js ✓
+### 已证明
+- ./check.sh ⇒ 17 通过 / 0 失败;assembleRelease + assembleDebug ⇒ BUILD SUCCESSFUL
+### 未验
+- 真机:Rocket.Chat 式 CSS 细节、软件渲染下的观感
