@@ -98,7 +98,7 @@ object Latex {
         while (true) {
             val idx = s.indexOf("\\$cmd{")
             if (idx < 0) return s
-            var i = idx + cmd.length + 2
+            var i = idx + cmd.length + 1   // 停在 "{" 上:循环才能正确读取参数(之前 +2 跳过了,导致 √()2)
             val args = mutableListOf<String>()
             var end = i
             while (i < s.length && s[i] == '{') {

@@ -56,6 +56,8 @@ android {
 }
 
 dependencies {
+    // 工程判据(JVM 单测):LaTeX 管线 / 计费时段等纯逻辑
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
@@ -80,4 +82,9 @@ dependencies {
     // 渲染与工具
     implementation("io.noties.markwon:core:4.6.2")
     implementation("com.google.zxing:core:3.5.3")
+}
+
+
+android {
+    testOptions { unitTests.isReturnDefaultValues = true }
 }

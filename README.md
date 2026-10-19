@@ -69,3 +69,13 @@ MIT © 2026 wristchat contributors
 第三方组件:ZXing core (Apache-2.0)、Markwon (Apache-2.0)、KaTeX (MIT)、marked.js (MIT)、AndroidX/Jetpack (Apache-2.0)、kotlinx-coroutines (Apache-2.0)。
 
 界面与交互设计受 [rikkahub](https://github.com/rikkahub/rikkahub) (AGPL-3.0)、[Operit](https://github.com/AAswordman/Operit) (LGPL-3.0)、[chatbox](https://github.com/chatboxai/chatbox) (GPL-3.0)、[DeepSeek-Balance-Whale-Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget) 启发(仅借鉴设计思路,无代码/资源引用)。
+
+## 开发与验证
+
+```bash
+./check.sh                          # 可失败判据(JVM 单测),真实退出码
+gradle :app:assembleRelease         # 构建
+```
+
+要求:JDK 17、`ANDROID_HOME` 指向 Android SDK、`gradle` 在 PATH(或设 `GRADLE_BIN`)。
+工程纪律见工作区根下 `docs/ENGINEERING-RULES.md`(只读)。
