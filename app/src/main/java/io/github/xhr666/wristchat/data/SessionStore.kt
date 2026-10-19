@@ -101,11 +101,17 @@ class SessionStore(private val context: Context) {
             try {
                 val o = JSONObject(f.readText())
                 val msgs = msgsOf(o)
+                var briefCost = o.optDouble("totalCost")
+                if (briefCost <= 0.0) {   // 老会话没累计字段:从消息 cost 求和(自愈,避免列表永远显示 0)
+                    var sum = 0.0
+                    for (i in 0 until msgs.length()) sum += msgs.optJSONObject(i)?.optDouble("cost", 0.0) ?: 0.0
+                    briefCost = sum
+                }
                 out.add(SessionBrief(
                     id = o.optString("id"),
                     title = o.optString("title", "新会话"),
                     updatedAt = o.optLong("updatedAt"),
-                    totalCost = o.optDouble("totalCost"),
+                    totalCost = briefCost,
                     msgCount = msgs.length(),
                 ))
             } catch (e: Exception) {

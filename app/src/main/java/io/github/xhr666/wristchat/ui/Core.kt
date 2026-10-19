@@ -274,8 +274,13 @@ private fun SmallScrollIndicator(state: LazyListState) {
         val r = size.minDimension / 2f - edgePx
         val cx = size.width / 2f
         val cy = size.height / 2f
-        val sweep = 6f + 34f * smooth               // 6°→40°
-        val start = -sweep / 2f                     // 以 3 点钟方向为中心
+        // 标准滚动条:滑块长度固定(按可见比例),位置随进度沿右边缘移动
+        val total = runCatching { state.layoutInfo.totalItemsCount }.getOrDefault(0)
+        val visible = runCatching { state.layoutInfo.visibleItemsInfo.size }.getOrDefault(0)
+        val span = 120f                                  // 右边缘可用角度 -60°..+60°
+        val thumb = if (total > 0) (span * visible / total).coerceIn(18f, 60f) else 30f
+        val sweep = thumb
+        val start = -span / 2f + smooth * (span - thumb)  // 位置随进度移动
         drawArc(
             color = Color.White.copy(alpha = 0.9f),
             startAngle = start,

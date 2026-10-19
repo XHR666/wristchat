@@ -99,6 +99,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_TEXT_ALIGN, "left") ?: "left"
         set(v) = prefs.edit().putString(KEY_TEXT_ALIGN, v).apply()
 
+    /** 用户/智能体消息左右位置互换 */
+    var messageSwap: Boolean
+        get() = prefs.getBoolean(KEY_MSG_SWAP, false)
+        set(v) = prefs.edit().putBoolean(KEY_MSG_SWAP, v).apply()
+
     /** 每行从右往左读(仅影响文字排版;公式仍是 LaTeX 正常顺序) */
     var textRtl: Boolean
         get() = prefs.getBoolean(KEY_TEXT_RTL, false)
@@ -323,6 +328,7 @@ Requirements:
         private const val KEY_THINKING = "thinking"
         private const val KEY_TEXT_ALIGN = "text_align"
         private const val KEY_TEXT_RTL = "text_rtl"
+        private const val KEY_MSG_SWAP = "message_swap"
         private const val KEY_EFFORT = "effort"
         private const val KEY_TEMPERATURE = "temperature"
         private const val KEY_TOPP = "topp"

@@ -15,6 +15,14 @@ class WristChatApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 已安装完的更新包不再留着:启动时清掉 cacheDir/updates 下的 apk
+        runCatching {
+            Thread {
+                java.io.File(cacheDir, "updates").listFiles()?.forEach { f ->
+                    if (f.name.endsWith(".apk", true) || f.name.endsWith(".apk.sha256")) f.delete()
+                }
+            }.start()
+        }
         settings = SettingsStore.newInstance(this)
         settings.versionName = BuildConfig.VERSION_NAME
         // 旧模型名已下线(请求会被自动路由到 V4.1-Flash),统一改成新名 deepseek-flash

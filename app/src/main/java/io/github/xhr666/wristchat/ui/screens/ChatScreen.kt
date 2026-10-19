@@ -176,7 +176,8 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
         Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp),
-        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+        // 左右互换:开启后用户消息在左、智能体在右
+        horizontalAlignment = if (isUser != settings.messageSwap) Alignment.End else Alignment.Start,
     ) {
         if (!isUser && m.reasoning.isNotBlank()) {
             Text(if (expanded) "💭 思考过程 ▾" else "💭 思考过程 ▸",
@@ -196,7 +197,7 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
         }
         Box(
             Modifier
-                .widthIn(max = 175.dp)
+                .widthIn(max = if (isUser) 172.dp else 200.dp)
                 .padding(top = 3.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(if (isUser) c.bubbleUser else c.bubbleAi)

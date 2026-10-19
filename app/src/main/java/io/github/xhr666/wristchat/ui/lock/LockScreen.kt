@@ -73,7 +73,7 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
         Modifier
             .fillMaxSize()
             .background(c.bg)
-            .padding(24.dp),
+            .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -89,7 +89,7 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
                 rowKeys.forEach { k ->
                     Box(
                         Modifier
-                            .size(64.dp)
+                            .size(46.dp)
                             .padding(4.dp)
                             .clip(CircleShape)
                             .background(c.surface)
