@@ -148,3 +148,9 @@
 - ./check.sh ⇒ 17 通过 / 0 失败;assembleRelease + assembleDebug ⇒ BUILD SUCCESSFUL
 ### 未验
 - 真机:Rocket.Chat 式 CSS 细节、软件渲染下的观感
+
+## 2026-10-20 · v0.8.8(授权发布)
+- 版本:versionCode 48 / versionName 0.8.8
+- 门禁:./check.sh ⇒ 17 通过 / 0 失败
+- 内容:KaTeX 官方 auto-render + 软件渲染 + 控制台诊断(katexNodes/js-error)
+- 未验:真机渲染与性能
