@@ -78,3 +78,10 @@
 ### 未验
 - 真机未验(KaTeX 是否真正渲染、高度是否正确、设置页刷新)
 - item 3① 金额偏差仍需一次真机对照:导出日志里 `[cost]` 行 vs 平台"今日消费"
+
+## 2026-10-19 · v0.8.5(授权发布)
+- 版本:versionCode 45 / versionName 0.8.5
+- 门禁:./check.sh ⇒ 15 通过 / 0 失败
+- 构建:assembleRelease ×1 + assembleDebug ×1 ⇒ BUILD SUCCESSFUL
+- 内容:KaTeX 重接(高度测量+兜底)、设置页留白与即时刷新、滚动条固定轨道+滑块、价格判据 P5、cost 诊断日志
+- 未验:真机渲染与设置页行为;累计消费金额偏差待日志对照
