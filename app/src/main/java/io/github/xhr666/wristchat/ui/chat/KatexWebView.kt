@@ -17,6 +17,14 @@ class KatexWebView(context: Context) : WebView(context) {
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+        // 关键:file:// 页面默认禁止加载子资源(JS/字体),Android 10+ 会静默失败 → 公式空白
+        @Suppress("DEPRECATION")
+        settings.allowFileAccess = true
+        @Suppress("DEPRECATION")
+        settings.allowFileAccessFromFileURLs = true
+        @Suppress("DEPRECATION")
+        settings.allowUniversalAccessFromFileURLs = true
+        settings.blockNetworkLoads = false
         settings.setTextZoom(100)
         // 关键:WebView 默认白底,不设透明就会在深色气泡里显示成一条白块
         setBackgroundColor(android.graphics.Color.TRANSPARENT)

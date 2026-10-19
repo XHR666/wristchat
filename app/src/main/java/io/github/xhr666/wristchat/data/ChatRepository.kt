@@ -91,6 +91,8 @@ class ChatRepository(
 
         // 组装系统提示:自定义 Prompt → Skills → 记忆
         val sysParts = mutableListOf<String>()
+        // 应用级系统提示词:放在最前面(优先于记忆/自定义提示词)
+        settings.systemPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(0, it) }
         settings.customPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
         SkillStoreProvider.skillsPrompt?.takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
         if (enableMemory) {

@@ -92,3 +92,19 @@
 - 发布后验证:GitHub API assets=4 全部 uploaded;下载端点第 1 次即 HTTP 206(无传播延迟);
   release APK sha256 = 2177e0f0…(本地与发布 sha256 文件一致)
 - 授权:用户当次明确授权("发布")
+
+## 2026-10-20 · 渲染修复 + 系统提示词 + 应用图标
+### 已改(编译+判据通过;真机渲染未验)
+- LaTeX(WebView/KaTeX):开启 `allowFileAccessFromFileURLs` / `allowUniversalAccessFromFileURLs`(+allowFileAccess)
+  —— Android 10+ 对 file:// 页面默认拦截子资源(JS/字体),这是"部分空白 + 退兜底"的最可能原因
+- 原生兜底扩展:\vec/\overrightarrow/\bar/\overline/\hat/\dot/\ddot/\tilde(组合字符)、
+  \triangle/\square/\ominus/\odot/\oplus/\otimes/角括号等;清理空上标 `^()` 残留
+- 应用级系统提示词:设置→模型与对话→"系统提示词(应用级)",作为**第一条 system 消息**注入
+- 应用图标:用 wristchat.jpg 生成 5 档密度 ic_launcher.png + 圆形 ic_launcher_round.png
+### 参考
+- KaTeX 官方 API 文档(katex.render/renderToString、throwOnError、字体相对路径 fonts/)
+### 已证明
+- ./check.sh ⇒ 17 通过 / 0 失败(新增 A11 向量/三角、A12 空上标)
+- assembleRelease + assembleDebug ⇒ BUILD SUCCESSFUL;APK 内 mipmap ic_launcher 资源已更新
+### 未验
+- 真机 KaTeX 是否恢复渲染、Markdown 行内代码显示、系统提示词生效、图标在表盘/列表中显示

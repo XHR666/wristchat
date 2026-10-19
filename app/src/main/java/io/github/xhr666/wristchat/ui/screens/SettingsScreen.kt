@@ -271,6 +271,8 @@ private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
 
 private fun LazyListScope.modelRows(s: SettingsStore, d: DialogController) {
     // 模型选择已挪到「默认模型与提示词 → 默认模型/全局模型设置」
+    item { WCard("系统提示词(应用级)", if (s.systemPrompt.isBlank()) "未设置" else "已设置") {
+        d.input("系统提示词", s.systemPrompt, ml = true) { s.systemPrompt = it } } }
     item { WToggle("思考模式(深度思考)", s.thinkingEnabled) { s.thinkingEnabled = it } }
     item { WCard("思考强度", s.reasoningEffort) { val o = listOf("low", "high", "max")
         d.choice("思考强度", o, o.indexOf(s.reasoningEffort).coerceAtLeast(0)) { i -> s.reasoningEffort = o[i] } } }

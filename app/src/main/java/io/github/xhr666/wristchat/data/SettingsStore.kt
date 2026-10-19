@@ -84,6 +84,11 @@ class SettingsStore(context: Context) {
         get() = strOf(KEY_P_COMPRESS, DEFAULT_PROMPT_COMPRESS)
         set(v) = setStr(KEY_P_COMPRESS, v)
 
+    /** 应用级系统提示词:每次请求都作为第一条 system 消息注入 */
+    var systemPrompt: String
+        get() = prefs.getString("system_prompt", "") ?: ""
+        set(v) = prefs.edit().putString("system_prompt", v).apply()
+
     fun resetPrompts() {
         prefs.edit()
             .remove(KEY_P_TRANSLATE).remove(KEY_P_TITLE).remove(KEY_P_OCR).remove(KEY_P_COMPRESS)

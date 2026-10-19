@@ -87,6 +87,20 @@ class EngineeringRulesTest {
         assertFalse(t.shouldReverse(false, "普通文字"))
     }
 
+    // ---------- 原生兜底:向量/三角/空上标 ----------
+
+    @Test fun `A11 向量与三角`() {
+        assertTrue("向量内容丢失", Latex.pretty("\\vec{AB}").contains("A"))
+        assertTrue("缺组合箭头", Latex.pretty("\\vec{AB}").contains("\u20D7"))
+        assertTrue("三角丢失", Latex.pretty("\\triangle").contains("△"))
+    }
+
+    @Test fun `A12 空上标不得残留空括号`() {
+        val out = Latex.pretty("H^{\\ominus}")
+        assertFalse("出现空括号: $out", out.contains("()"))
+        assertTrue("圆圈运算符丢失: $out", out.contains("⊖"))
+    }
+
     // ---------- 计价(对照官方表折算 CNY) ----------
 
     @Test fun `P5 单片价格与峰谷倍数`() {

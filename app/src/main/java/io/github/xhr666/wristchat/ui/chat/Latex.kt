@@ -27,6 +27,9 @@ object Latex {
         "Leftarrow" to "⇐", "leftrightarrow" to "↔", "mapsto" to "↦",
         "angle" to "∠", "degree" to "°", "perp" to "⊥", "parallel" to "∥", "sim" to "∼",
         "star" to "⋆", "circ" to "∘", "bullet" to "•", "ldots" to "…", "dots" to "…", "cdots" to "⋯",
+        "triangle" to "△", "bigtriangleup" to "△", "square" to "□", "blacksquare" to "■", "ominus" to "⊖", "odot" to "⊙", "oplus" to "⊕", "otimes" to "⊗", "oslash" to "⊘",
+        "mid" to "|", "vert" to "|", "Vert" to "‖", "langle" to "⟨", "rangle" to "⟩",
+        "lfloor" to "⌊", "rfloor" to "⌋", "lceil" to "⌈", "rceil" to "⌉",
     )
     private val sup = mapOf(
         '0' to '⁰', '1' to '¹', '2' to '²', '3' to '³', '4' to '⁴', '5' to '⁵', '6' to '⁶',
@@ -75,6 +78,15 @@ object Latex {
         for (cmd in listOf("text", "mathrm", "mathbf", "mathit", "operatorname", "textbf", "textit")) {
             s = replaceBraced(s, cmd) { args -> args.firstOrNull() ?: "" }
         }
+        // 向量/装饰:用组合字符(显示在字母上方)
+        s = replaceBraced(s, "vec") { a -> (a.firstOrNull() ?: "") + "\u20D7" }
+        s = replaceBraced(s, "overrightarrow") { a -> (a.firstOrNull() ?: "") + "\u20D7" }
+        s = replaceBraced(s, "bar") { a -> (a.firstOrNull() ?: "") + "\u0304" }
+        s = replaceBraced(s, "overline") { a -> (a.firstOrNull() ?: "") + "\u0304" }
+        s = replaceBraced(s, "hat") { a -> (a.firstOrNull() ?: "") + "\u0302" }
+        s = replaceBraced(s, "dot") { a -> (a.firstOrNull() ?: "") + "\u0307" }
+        s = replaceBraced(s, "ddot") { a -> (a.firstOrNull() ?: "") + "\u0308" }
+        s = replaceBraced(s, "tilde") { a -> (a.firstOrNull() ?: "") + "\u0303" }
         // 上下标:花括号 → unicode,否则原样
         s = applyScript(s, '^', sup)
         s = applyScript(s, '_', sub)
@@ -88,6 +100,8 @@ object Latex {
             .replace("\\\\", "\n")
         s = Regex("\\\\[a-zA-Z]+").replace(s, "")   // 未知命令直接去掉,避免显示源码
         s = s.replace("{", "").replace("}", "")
+        s = s.replace(Regex("\\^\\(\\)"), "").replace(Regex("_\\(\\)"), "")   // 空上/下标
+        s = s.replace(Regex("\\^\\s*\\("), "(").replace("^(", "(")                   // ^(x) → (x)
         s = s.replace(Regex("[ \\t]+"), " ").replace(Regex("\\n{3,}"), "\n\n").trim()
         return s
     }
