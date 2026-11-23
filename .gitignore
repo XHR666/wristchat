@@ -24,3 +24,5 @@ signing/
 *.apk
 *.aab
 *.sha256
+.kotlin/
+app/build/
