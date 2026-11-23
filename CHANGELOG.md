@@ -154,3 +154,16 @@
 - 门禁:./check.sh ⇒ 17 通过 / 0 失败
 - 内容:KaTeX 官方 auto-render + 软件渲染 + 控制台诊断(katexNodes/js-error)
 - 未验:真机渲染与性能
+
+## 2026-11-23 · 项目迁移(工作区分离)
+- 迁移原因:用户要求把本项目工作文件从旧工作区 `/root/Desktop/DSHarea/WatchProgram/WristChat/` 分离,迁入桌面 `/root/Desktop/wrist/wrist-chat/`(仓库也在此目录下)。
+- 迁移方式:同盘 `mv`(原子 rename,可逆);未删除用户其他项目(`DSHarea/WatchProgram/WristCalculator` 保持原样)。
+- 迁移内容:`deepseek-watch/`(仓库,含 `.git`、65 提交、全部 tag)、`wristchat-keystore/`、`WristChat-work/`、`watchstore/`、`wristchat.jpg`;另将本项目研究用参考 APK 复制到 `reference-apks/`(原文件保留在 `DSHarea/Androidapk/`)。
+- 环境变更(迁移时实测):原 JDK 路径 `/usr/lib/jvm/java-17-openjdk-arm64` 已不存在;现 JDK 17 位于 `/opt/jdk-17`(Temurin 17.0.21);可用 `source /opt/android-env.sh` 一次配置 JAVA_HOME/ANDROID_HOME/PATH。
+- 迁移后验证(实测):
+  - `./check.sh` ⇒ `判据: 17 通过 / 0 失败 / 0 跳过 (共 17)` + `PASS(退出码 0)`
+  - 清理旧路径构建缓存后 `gradle :app:assembleRelease :app:assembleDebug` ⇒ `BUILD SUCCESSFUL in 1m 24s`
+  - `aapt2 dump badging` ⇒ versionCode=48 versionName=0.8.8;debug 26512378 B / release 2754332 B(与迁移前归档一致)
+  - 签名相对路径 `../../wristchat-keystore/wristchat-release.jks` 在新位置仍有效
+- 同步更新:`AGENTS.md`(新项目根、JDK 路径、`/opt/android-env.sh`)。
+- 未验证:手表真机行为(与迁移无关)。

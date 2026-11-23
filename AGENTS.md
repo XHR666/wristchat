@@ -1,6 +1,9 @@
 # AGENTS.md — WristChat 入口(给代理/会话)
 
-开工前先读**工作区根下的 `docs/ENGINEERING-RULES.md`(只读,严格遵循)**。
+开工前先读 **`/root/Desktop/DSHarea/docs/ENGINEERING-RULES.md`**(全局工程纪律手册 v2,只读,严格遵循)。
+
+> 项目根(2026-11-23 起):`/root/Desktop/wrist/wrist-chat/`;仓库在本目录(`deepseek-watch/`)。
+> 旧工作区路径 `/root/Desktop/DSHarea/WatchProgram/WristChat/` 已不存在。
 
 ## 项目结构
 - `app/` — Android 应用(Compose + Material3, minSdk 30 / target 34, 圆屏 466px @2.0)
@@ -11,11 +14,13 @@
 ./check.sh                 # = gradle :app:testDebugUnitTest,打印 "通过/失败" 并返回真实退出码
 ```
 - 判据在 `app/src/test/java/.../EngineeringRulesTest.kt`,每条都**能失败**(改坏实现必须红)
-- 环境:JDK 17、Android SDK(ANDROID_HOME)、gradle 在 PATH(可用 `GRADLE_BIN` 覆盖)
+- 环境:JDK 17(`/opt/jdk-17`)、Android SDK(`ANDROID_HOME=/opt/android-sdk`)、gradle 在 PATH(可用 `GRADLE_BIN` 覆盖)
+  - 一条命令就绪:`source /opt/android-env.sh`(已含 JAVA_HOME/ANDROID_HOME/gradle/aapt2 PATH)
 - 变异自证脚本:`/tmp/mutate.py`(仓库外临时脚本,不提交)
 
 ## 构建
 ```bash
+source /opt/android-env.sh      # JAVA_HOME=/opt/jdk-17, ANDROID_HOME=/opt/android-sdk
 gradle :app:assembleRelease :app:assembleDebug
 ```
 产物在 `app/build/outputs/apk/<variant>/app-<variant>.apk`。
