@@ -15,6 +15,7 @@ import io.github.xhr666.wristchat.data.SessionStore
 import io.github.xhr666.wristchat.data.SettingsStore
 import io.github.xhr666.wristchat.data.SkillStore
 import io.github.xhr666.wristchat.data.TokenUsage
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
 data class ConvDetails(
@@ -60,6 +61,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _title = MutableLiveData("")
     val title: LiveData<String> = _title
 
+    /** 流式增量不会换 Session 实例,用这个计数让界面重组。 */
+    private val _frame = MutableLiveData(0)
+    val frame: LiveData<Int> = _frame
+
     private val _sessions = MutableLiveData<List<SessionStore.SessionBrief>>(emptyList())
     val sessions: LiveData<List<SessionStore.SessionBrief>> = _sessions
 
@@ -68,7 +73,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _quickInputs.value = settings.getQuickInputs()
         // 冷启动只解析最近一个会话文件(其余异步);技能扫描也挪到 IO,避免首帧卡顿
         loadOrCreateSession()
+        // 冷启动先把当前会话画出来,技能扫描和全量会话列表往后放,避免和第一次左右滑抢主线程。
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.delay(800)
             SkillStoreProviderInject.refresh(skillStore)
             refreshSessions()
         }
@@ -201,10 +208,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun detailsOf(s: Session): ConvDetails {
+        sessionStore.reconcile(s)
         val lastUsage = s.messages.lastOrNull { it.usage != null }?.usage
         return ConvDetails(
             totalTokens = s.totalTokens,
-            cacheHitRate = if (s.totalTokens > 0) s.totalCacheHit.toFloat() / (s.totalCacheHit + s.totalCacheMiss).coerceAtLeast(1) else 0f,
+            cacheHitRate = io.github.xhr666.wristchat.data.SessionAccounts.cacheHitRate(
+                s.totalCacheHit, s.totalCacheMiss, 0, 0),
             contextTokens = lastUsage?.promptTokens ?: 0,
             contextWindow = settings.contextWindow,
             messageCount = s.messages.size,
@@ -284,8 +293,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val userMsg = ChatMessage(role = "user", content = trimmed, imgs = imageFiles, ts = ts)
         // 先落库(即使请求失败,用户消息也保留)
         s.messages.add(userMsg)
+        val aiTs = ts + 1
+        s.messages.add(ChatMessage(role = "assistant", content = "", ts = aiTs))
         sessionStore.save(s)
-        _session.value = s
+        bump()
         clearDraft()   // 纯图片消息也要清掉草稿文件,否则下次启动会把旧文本恢复出来
         refreshSessions()   // 立刻让左侧列表包含这个会话
         _sending.value = true
@@ -293,25 +304,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             // 上下文压缩检查
             maybeCompress(s)
-            // 历史不含刚追加的这条用户消息(仓库会把它作为本轮提问带上去,避免重复)
-            val history = s.messages.filter { it.role != "system" && it !== userMsg }
+            // 历史不含刚追加的这条用户消息和占位回复(仓库会把提问作为本轮带上去)
+            val history = s.messages.filter { it.role != "system" && it !== userMsg && it.ts != aiTs }
+            val updates = Channel<Pair<String, String>>(Channel.CONFLATED)
+            val paint = launch(kotlinx.coroutines.Dispatchers.Main) {
+                for ((c, r) in updates) replaceAssistant(s, aiTs, c, r, null, 0.0)
+            }
             val result = repo.chat(history, trimmed, imageFiles = imageFiles,
                 enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK,
-                modelOverride = modelOverride)
+                modelOverride = modelOverride,
+                onPartial = { c, r -> updates.trySend(c to r) })
+            updates.close()
+            paint.join()
             when (result) {
                 is ChatResult.Success -> {
-                    val ai = ChatMessage(
-                        role = "assistant",
-                        content = result.content,
-                        reasoning = result.reasoning,
-                        ts = System.currentTimeMillis(),
-                        usage = result.usage,
-                        cost = result.cost,
-                    )
-                    s.messages.add(ai)
+                    replaceAssistant(s, aiTs, result.content, result.reasoning, result.usage, result.cost)
+                    sessionStore.reconcile(s)
                     sessionStore.save(s)
-                    _session.value = s
-                    _status.value = null   // 不再弹"消耗 ¥x"提示
+                    bump()
+                    _status.value = null
                     if (result.memoryOps.isNotEmpty()) {
                         flashStatus("已更新 ${result.memoryOps.size} 条记忆")
                     }
@@ -320,16 +331,35 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 is ChatResult.Error -> {
                     _status.value = result.message
-                    // 错误信息也入会话(便于查看)
-                    s.messages.add(ChatMessage(role = "assistant", content = "⚠️ ${result.message}"))
+                    val i = s.messages.indexOfLast { it.ts == aiTs }
+                    val prior = if (i >= 0) s.messages[i].content else ""
+                    val text = if (prior.isBlank()) "⚠️ ${result.message}" else prior + "\n⚠️ ${result.message}"
+                    replaceAssistant(s, aiTs, text, if (i >= 0) s.messages[i].reasoning else "", null, 0.0)
                     sessionStore.save(s)
-                    _session.value = s
+                    bump()
                 }
             }
             _sending.value = false
             refreshDetails()
         }
         return true
+    }
+
+    private fun bump() {
+        _frame.value = (_frame.value ?: 0) + 1
+    }
+
+    private fun replaceAssistant(
+        s: Session, ts: Long, content: String, reasoning: String,
+        usage: TokenUsage?, cost: Double,
+    ) {
+        val i = s.messages.indexOfLast { it.ts == ts && it.role == "assistant" }
+        val msg = ChatMessage(
+            role = "assistant", content = content, reasoning = reasoning,
+            ts = ts, usage = usage, cost = cost,
+        )
+        if (i >= 0) s.messages[i] = msg else s.messages.add(msg)
+        bump()
     }
 
     /** 估算 token:1 中文字≈0.6,1 英文≈0.3(官方 token_usage 文档) */

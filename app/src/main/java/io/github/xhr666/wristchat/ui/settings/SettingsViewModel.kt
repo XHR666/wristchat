@@ -7,6 +7,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import io.github.xhr666.wristchat.WristChatApp
 import io.github.xhr666.wristchat.data.MemoryStore
+import io.github.xhr666.wristchat.data.SessionAccounts
 import io.github.xhr666.wristchat.data.SessionStore
 import io.github.xhr666.wristchat.data.SettingsStore
 import io.github.xhr666.wristchat.data.SkillStore
@@ -49,15 +50,28 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { refreshSizesSync() }
     }
 
+    fun dismissStorageWarn() {
+        settings.storageWarnDismissed = true
+        _sessionWarn.postValue(false)
+    }
+
     private fun refreshSizesSync() {
-        val sessions = sessionStore.briefs()
-        _sessionWarn.postValue(sessions.size >= MAX_SESSIONS || sessions.any { it.msgCount >= MAX_MESSAGES })
         val sesBytes = sessionStore.totalSizeBytes()
+        val attachBytes = attachmentBytes()
+        val occupied = sesBytes + attachBytes
+        if (!SessionAccounts.shouldWarn(occupied)) settings.storageWarnDismissed = false
+        _sessionWarn.postValue(SessionAccounts.shouldWarn(occupied) && !settings.storageWarnDismissed)
         val memBytes = memoryStore.sizeBytes()
         val skillBytes = skillStore.totalSizeBytes()
         val webCache = webViewCacheSize()
         _sessionsSize.postValue(human(sesBytes))
         _cacheInfo.postValue("WebView 缓存:${human(webCache)} · 会话:${human(sesBytes)} · 记忆:${human(memBytes)} · 技能:${human(skillBytes)}")
+    }
+
+    private fun attachmentBytes(): Long {
+        val dir = File(getApplication<Application>().filesDir, "attachments")
+        if (!dir.exists()) return 0L
+        return dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
     }
 
     private fun webViewCacheSize(): Long {
@@ -96,7 +110,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun sessionsSummary(): String {
         val sessions = sessionStore.list()
         return sessions.joinToString("\n") { s ->
-            "${s.title.take(14)} · ${s.messages.size}条 · ¥%.3f".format(s.totalCost)
+            "${s.title.take(14)} · ${s.messages.size}条 · ¥%.4f".format(s.totalCost)
         }
     }
 

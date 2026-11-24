@@ -44,6 +44,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
+import io.github.xhr666.wristchat.ui.common.RoundInsets
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -74,6 +75,7 @@ object RotaryBus {
         val v = acc.addAndGet(delta)
         if (v > LIMIT) acc.set(LIMIT) else if (v < -LIMIT) acc.set(-LIMIT)
         lastEventAt = System.currentTimeMillis()
+        signals.tryEmit(Unit)
     }
     fun drain(): Int = acc.getAndSet(0)
 
@@ -84,15 +86,18 @@ object RotaryBus {
 }
 
 @Composable
-fun RotaryList(listState: LazyListState, enabled: Boolean) {
-    LaunchedEffect(enabled) {
+fun RotaryList(listState: LazyListState, enabled: Boolean, sign: Int = 1) {
+    LaunchedEffect(enabled, sign) {
         if (!enabled) return@LaunchedEffect
         var velocity = 0f
         var flingJob: kotlinx.coroutines.Job? = null
         // 事件驱动:不再用 withFrameNanos 常驻循环(那会让界面持续出帧,白耗电)
+        // 先把订阅前积下的转动吃掉,否则第一格要等下一次才动
+        val pending = RotaryBus.drain()
+        if (pending != 0) listState.dispatchRawDelta((pending * sign).toFloat())
         RotaryBus.signals.collect {
             flingJob?.cancel(); flingJob = null
-            val px = RotaryBus.drain().coerceIn(-1200, 1200)
+            val px = RotaryBus.drain().coerceIn(-1200, 1200) * sign
             if (px != 0) {
                 listState.dispatchRawDelta(px.toFloat())
                 velocity = 0.65f * velocity + 0.35f * (px / 16.7f)
@@ -161,17 +166,16 @@ fun ScreenScaffold(
     val c = LocalWrist.current
     BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
         val w = maxWidth; val h = maxHeight
-        // 底部圆边内缩量:越靠底部,可视宽度越窄 → 给内容列表留出安全边距
-        // 圆边内缩量按几何算会到 ~90dp(那是水平方向的内缩),作为"底部留白"太大,
-        // 会导致滑到底还有一大段空白;这里收敛到 26dp:末项四角可能被圆边轻切,和微思一致。
-        val bottomSafe = (roundInset(w, h, h - 4.dp) + 12.dp).coerceAtMost(26.dp)
+        val dia = kotlin.math.min(w.value, h.value)
+        // 圆屏页边跟 heybox Lite:顶 12%、底 8%,左右按顶边那条弦收进圆里。
+        // 不用贴底的整段弦宽(大约 90dp),那会把列表底下留出一大块空白。
+        val topPad = RoundInsets.topPad(dia).dp
+        val bottomSafe = RoundInsets.bottomPad(dia).dp
+        val side = RoundInsets.chordInset(w.value, h.value, topPad.value).dp
         val showClock = showTimeAlways || showTimeAtTop
-        val topPad = if (showClock) 30.dp else 12.dp
-        // 让首/末项中心落在"屏幕中心"(h/2),而不是列表可视区中心
         val itemHalf = 36.dp
         val listTop = topPad + 40.dp
         val listCenterPad = ((h / 2) - listTop - itemHalf).coerceAtLeast(0.dp)
-        // 末项不再额外留白(否则底部会有一大段"滑不完"的空白),只保证圆边安全
         val listBottomPad = 6.dp
         CompositionLocalProvider(
             LocalRoundBottom provides bottomSafe,
@@ -180,9 +184,8 @@ fun ScreenScaffold(
         ) {
         Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(top = topPad)) {
-            val inset = roundInset(w, h, 12.dp + 20.dp)
             var swipeAcc by remember { mutableStateOf(0f) }
-            var rowMod = Modifier.fillMaxWidth().height(40.dp).padding(start = inset + 6.dp, end = inset + 6.dp)
+            var rowMod = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = side)
             if (onHeaderSwipeBack != null) {
                 // key 固定 Unit + rememberUpdatedState:onBack 换新实例不再重启手势检测
                 val currentBack by rememberUpdatedState(onHeaderSwipeBack)
@@ -200,7 +203,7 @@ fun ScreenScaffold(
                     maxLines = 1, modifier = Modifier.weight(1f))
                 actions()
             }
-            content()
+            Box(Modifier.weight(1f).padding(horizontal = side)) { content() }
         }
         // 顶部弧形时间(官方 CurvedText:文字沿圆表上沿弧线排布)
         if (showClock) CurvedClock()

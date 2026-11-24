@@ -78,6 +78,7 @@ class ChatRepository(
         imageFiles: List<String> = emptyList(),
         enableMemory: Boolean,
         modelOverride: String? = null,
+        onPartial: ((content: String, reasoning: String) -> Unit)? = null,
     ): ChatResult {
         val provider = Providers.resolve(settings)
         val apiKey = settings.apiKey
@@ -145,28 +146,51 @@ class ChatRepository(
             }
         }
 
-        val (code, text) = try {
-            withContext(Dispatchers.IO) { Http.postJson(url, body.toString(), apiKey) }
-        } catch (e: Exception) {
-            return ChatResult.Error("网络错误:${e.message}")
+        val streamed = onPartial != null
+        if (streamed) {
+            body.put("stream", true)
+            body.put("stream_options", JSONObject().put("include_usage", true))
         }
-        if (code !in 200..299) {
-            return ChatResult.Error(parseError(code, text), code)
+        val msg: JSONObject
+        val usage: TokenUsage
+        if (!streamed) {
+            val (code, text) = try {
+                withContext(Dispatchers.IO) { Http.postJson(url, body.toString(), apiKey) }
+            } catch (e: Exception) {
+                return ChatResult.Error("网络错误:${e.message}")
+            }
+            if (code !in 200..299) return ChatResult.Error(parseError(code, text), code)
+            val root = try { JSONObject(text) } catch (e: Exception) { return ChatResult.Error("响应解析失败") }
+            val choice = root.optJSONArray("choices")?.optJSONObject(0)
+                ?: return ChatResult.Error("响应缺少 choices")
+            msg = choice.optJSONObject("message") ?: JSONObject()
+            usage = UsageJson.parse(root.optJSONObject("usage"))
+        } else {
+            val acc = StreamAccum()
+            val (code, err) = try {
+                withContext(Dispatchers.IO) {
+                    Http.postJsonStream(url, body.toString(), apiKey) { line ->
+                        val ev = SseEvents.parseLine(line) ?: return@postJsonStream
+                        if (ev.done) return@postJsonStream
+                        if (ev.content.isNotEmpty()) acc.content.append(ev.content)
+                        if (ev.reasoning.isNotEmpty()) acc.reasoning.append(ev.reasoning)
+                        ev.usage?.let { acc.usage = it }
+                        acc.takeTools(ev.raw)
+                        onPartial.invoke(acc.content.toString(), acc.reasoning.toString())
+                    }
+                }
+            } catch (e: Exception) {
+                return ChatResult.Error("网络错误:${e.message}")
+            }
+            if (code !in 200..299) return ChatResult.Error(parseError(code, err), code)
+            msg = JSONObject().apply {
+                put("content", acc.content.toString())
+                put("reasoning_content", acc.reasoning.toString())
+                if (acc.tools.length() > 0) put("tool_calls", acc.tools)
+            }
+            usage = acc.usage ?: TokenUsage()
+            onPartial.invoke(acc.content.toString(), acc.reasoning.toString())
         }
-
-        val root = try { JSONObject(text) } catch (e: Exception) { return ChatResult.Error("响应解析失败") }
-        val choice = root.optJSONArray("choices")?.optJSONObject(0)
-            ?: return ChatResult.Error("响应缺少 choices")
-        val msg = choice.optJSONObject("message") ?: JSONObject()
-        val usageRaw = root.optJSONObject("usage")
-        val usage = TokenUsage(
-            promptTokens = usageRaw?.optInt("prompt_tokens") ?: 0,
-            cacheHit = usageRaw?.optInt("prompt_cache_hit_tokens") ?: 0,
-            cacheMiss = usageRaw?.optInt("prompt_cache_miss_tokens") ?: 0,
-            completionTokens = usageRaw?.optInt("completion_tokens") ?: 0,
-            totalTokens = usageRaw?.optInt("total_tokens") ?: 0,
-            reasoningTokens = usageRaw?.optJSONObject("completion_tokens_details")?.optInt("reasoning_tokens") ?: 0,
-        )
         val now = System.currentTimeMillis() / 1000
         val cost = Pricing.cost(model, now, usage.cacheHit.toLong(), usage.cacheMiss.toLong(), usage.completionTokens.toLong())
         // 成本诊断(不含对话内容):便于对照平台"今日消费",排查累计金额偏差
@@ -206,33 +230,35 @@ class ChatRepository(
                     put("tool_calls", toolCalls)
                 })
                 for (i in 0 until toolResults.length()) messages.put(toolResults.get(i))
+                body.remove("stream")
+                body.remove("stream_options")
                 val body2 = body.put("messages", messages)
                 val (code2, text2) = try {
                     withContext(Dispatchers.IO) { Http.postJson(url, body2.toString(), apiKey) }
                 } catch (e: Exception) {
-                    return ChatResult.Error("记忆处理后网络错误:${e.message}", code)
+                    return ChatResult.Error("记忆处理后网络错误:${e.message}")
                 }
                 if (code2 !in 200..299) return ChatResult.Error(parseError(code2, text2), code2)
                 val root2 = try { JSONObject(text2) } catch (e: Exception) { return ChatResult.Error("响应解析失败") }
                 val choice2 = root2.optJSONArray("choices")?.optJSONObject(0) ?: return ChatResult.Error("响应缺少 choices")
                 val msg2 = choice2.optJSONObject("message") ?: JSONObject()
-                val usage2Raw = root2.optJSONObject("usage")
-                val usage2 = TokenUsage(
-                    promptTokens = usage2Raw?.optInt("prompt_tokens") ?: 0,
-                    cacheHit = usage2Raw?.optInt("prompt_cache_hit_tokens") ?: 0,
-                    cacheMiss = usage2Raw?.optInt("prompt_cache_miss_tokens") ?: 0,
-                    completionTokens = usage2Raw?.optInt("completion_tokens") ?: 0,
-                    totalTokens = usage2Raw?.optInt("total_tokens") ?: 0,
-                    reasoningTokens = usage2Raw?.optJSONObject("completion_tokens_details")?.optInt("reasoning_tokens") ?: 0,
-                )
-                val cost2 = Pricing.cost(model, now, usage2.cacheHit.toLong(), usage2.cacheMiss.toLong(), usage2.completionTokens.toLong())
+                val usage2 = UsageJson.parse(root2.optJSONObject("usage"))
+                val cost2 = cost + Pricing.cost(model, now, usage2.cacheHit.toLong(), usage2.cacheMiss.toLong(), usage2.completionTokens.toLong())
+                onPartial?.invoke(msg2.optString("content"), msg2.optString("reasoning_content"))
                 val finalText = msg2.optString("content").ifBlank {
                     if (ops.isNotEmpty()) "✓ 已${if (ops.any { it.action == "delete" }) "删除" else "保存"} ${ops.size} 条记忆" else ""
                 }
                 return ChatResult.Success(
                     content = finalText,
-                    reasoning = msg2.optString("reasoning_content"),
-                    usage = usage2,
+                    reasoning = msg2.optString("reasoning_content").ifBlank { msg.optString("reasoning_content") },
+                    usage = TokenUsage(
+                        promptTokens = usage.promptTokens + usage2.promptTokens,
+                        cacheHit = usage.cacheHit + usage2.cacheHit,
+                        cacheMiss = usage.cacheMiss + usage2.cacheMiss,
+                        completionTokens = usage.completionTokens + usage2.completionTokens,
+                        totalTokens = usage.totalTokens + usage2.totalTokens,
+                        reasoningTokens = usage.reasoningTokens + usage2.reasoningTokens,
+                    ),
                     cost = cost2,
                     memoryOps = ops,
                     model = model,
@@ -367,19 +393,43 @@ class ChatRepository(
             val root = JSONObject(text)
             val title = root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
                 ?.trim()?.trim('"', '“', '”')?.take(16) ?: ""
-            val usageRaw = root.optJSONObject("usage")
-            val usage = usageRaw?.let {
-                TokenUsage(
-                    promptTokens = it.optInt("prompt_tokens"),
-                    cacheHit = it.optInt("prompt_cache_hit_tokens"),
-                    cacheMiss = it.optInt("prompt_cache_miss_tokens"),
-                    completionTokens = it.optInt("completion_tokens"),
-                    totalTokens = it.optInt("total_tokens"),
-                )
-            }
+            val usage = root.optJSONObject("usage")?.let { UsageJson.parse(it) }
             title to usage
         } catch (e: Exception) {
             "" to null
+        }
+    }
+}
+
+/** 流式增量:正文、思考、以及按 index 拼起来的 tool_calls。 */
+private class StreamAccum {
+    val content = StringBuilder()
+    val reasoning = StringBuilder()
+    var usage: TokenUsage? = null
+    val tools = JSONArray()
+
+    fun takeTools(root: JSONObject?) {
+        val delta = root?.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: return
+        val arr = delta.optJSONArray("tool_calls") ?: return
+        for (i in 0 until arr.length()) {
+            val part = arr.optJSONObject(i) ?: continue
+            val index = if (part.has("index")) part.optInt("index") else i
+            while (tools.length() <= index) {
+                tools.put(JSONObject().apply {
+                    put("id", "")
+                    put("type", "function")
+                    put("function", JSONObject().apply { put("name", ""); put("arguments", "") })
+                })
+            }
+            val cur = tools.getJSONObject(index)
+            val id = part.optString("id", "")
+            if (id.isNotEmpty()) cur.put("id", id)
+            val fn = part.optJSONObject("function") ?: continue
+            val name = fn.optString("name", "")
+            val f = cur.getJSONObject("function")
+            if (name.isNotEmpty()) f.put("name", name)
+            val args = fn.optString("arguments", "")
+            if (args.isNotEmpty()) f.put("arguments", f.optString("arguments", "") + args)
         }
     }
 }

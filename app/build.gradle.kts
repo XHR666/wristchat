@@ -81,6 +81,8 @@ dependencies {
 
     // 渲染与工具
     implementation("io.noties.markwon:core:4.6.2")
+    // 原生公式(GPL-2.0 + 链接例外)。气泡里不再用 WebView。
+    implementation("ru.noties:jlatexmath-android:0.2.0")
     implementation("com.google.zxing:core:3.5.3")
 }
 

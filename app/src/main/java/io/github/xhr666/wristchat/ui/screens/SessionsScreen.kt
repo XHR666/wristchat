@@ -49,7 +49,7 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = 2.dp)
                     ,
                 contentPadding = PaddingValues(
                     top = LocalListCenterPad.current,
@@ -88,6 +88,6 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
 }
 
 private fun sub(s: SessionStore.SessionBrief): String {
-    val cost = if (s.totalCost > 0) " · ¥%.3f".format(s.totalCost) else ""
+    val cost = if (s.totalCost > 0) " · ¥%.4f".format(s.totalCost) else ""
     return "${s.msgCount} 条 · ${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.updatedAt))}$cost"
 }

@@ -146,6 +146,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_MEMORY_AUTO, true)
         set(v) = prefs.edit().putBoolean(KEY_MEMORY_AUTO, v).apply()
 
+    /** 用户关掉「会话占用过多」之后,占用降回 50MB 以下会重新打开。 */
+    var storageWarnDismissed: Boolean
+        get() = prefs.getBoolean(KEY_STORAGE_WARN_OFF, false)
+        set(v) = prefs.edit().putBoolean(KEY_STORAGE_WARN_OFF, v).apply()
+
     var autoTitle: Boolean // 新会话自动生成标题(默认开)
         get() = prefs.getBoolean(KEY_AUTO_TITLE, true)
         set(v) = prefs.edit().putBoolean(KEY_AUTO_TITLE, v).apply()
@@ -342,6 +347,7 @@ Requirements:
         private const val KEY_COMPRESS_THRESHOLD = "compress_threshold"
         private const val KEY_CUSTOM_PROMPT = "custom_prompt"
         private const val KEY_MEMORY_AUTO = "memory_auto"
+        private const val KEY_STORAGE_WARN_OFF = "storage_warn_off"
         private const val KEY_AUTO_TITLE = "auto_title"
         private const val KEY_THEME = "theme"
         private const val KEY_DISPLAY_SCALE = "display_scale"

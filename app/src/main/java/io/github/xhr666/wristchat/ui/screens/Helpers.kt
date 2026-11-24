@@ -10,7 +10,8 @@ private const val LICENSE_TEXT = """
 第三方组件:
 - ZXing core (Apache-2.0)
 - Markwon (Apache-2.0)
-- KaTeX (MIT) / marked.js (MIT)
+- JLatexMath (GPL-2.0 with linking exception; fonts OFL / Knuth)
+- CN Wear Overlay (Apache-2.0) https://github.com/Star-ZER0/cnwearoverlay
 - AndroidX / Jetpack Compose (Apache-2.0)
 - kotlinx-coroutines (Apache-2.0)
 """

@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -17,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -65,16 +67,22 @@ fun SettingsMenuScreen(settings: SettingsStore) {
         ScreenScaffold(title = "设置", showTimeAlways = true,
             scrollIndicator = if (openCat == null) listState else null) {
             Column(Modifier.fillMaxSize()) {
-                if (warn) Text("会话已达上限,建议清理", color = Color(0xFFFFD9A0), fontSize = 12.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().background(Color(0xFF3D2E14)).padding(6.dp))
+                if (warn) Row(
+                    Modifier.fillMaxWidth().background(Color(0xFF3D2E14)).padding(start = 8.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("会话内容占用过多，建议清理", color = Color(0xFFFFD9A0), fontSize = 12.sp,
+                        modifier = Modifier.weight(1f), maxLines = 2)
+                    Text("X", color = Color(0xFFFFD9A0), fontSize = 14.sp,
+                        modifier = Modifier.clickable { vm.dismissStorageWarn() }.padding(8.dp))
+                }
                 LazyColumn(state = listState,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     // 圆表:首项居中 + 末项也能滚到中间(官方 ScalingLazyColumn 的居中语义)
                     contentPadding = PaddingValues(
-                        start = 18.dp, end = 18.dp,
+                        start = 4.dp, end = 4.dp,
                         top = LocalListCenterPad.current,
-                        bottom = LocalListBottomPad.current + LocalRoundBottom.current + 40.dp),
+                        bottom = LocalListBottomPad.current + 8.dp),
                 ) {
                     itemsIndexed(CATS) { _, cat ->
                         WCard(cat.title, cat.desc) { openCat = cat.key }
@@ -111,9 +119,9 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                 scrollIndicator = if (!syncOpen && logPage == null) listState else null) {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = 18.dp, end = 18.dp,
+                        start = 4.dp, end = 4.dp,
                         top = LocalListCenterPad.current,
-                        bottom = LocalListBottomPad.current + LocalRoundBottom.current + 40.dp)) {
+                        bottom = LocalListBottomPad.current + 8.dp)) {
                     settings.rev   // 依赖 rev:设置改完立即重建列表内容
                     when (cat) {
                         "service" -> serviceRows(settings, dialogs)

@@ -36,14 +36,13 @@ import io.github.xhr666.wristchat.data.Session
 import io.github.xhr666.wristchat.data.SettingsStore
 import io.github.xhr666.wristchat.ui.*
 import io.github.xhr666.wristchat.ui.chat.ChatViewModel
-import io.github.xhr666.wristchat.ui.chat.KatexWebView
+import io.github.xhr666.wristchat.ui.chat.RichText
 import io.noties.markwon.Markwon
 import kotlinx.coroutines.launch
 
 @Composable
 fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
     val session by vm.session.observeAsState()
-    val sending by vm.sending.observeAsState(false)
     val title by vm.title.observeAsState("")
     val status by vm.status.observeAsState()
     val quickInputs by vm.quickInputs.observeAsState(emptyList())
@@ -53,18 +52,28 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
     var fullscreenInput by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var newSessionAsk by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()
     val currentPage = LocalCurrentPage.current
     val c = LocalWrist.current
 
+    val frame by vm.frame.observeAsState(0)
     val messages = session?.messages ?: emptyList()
     val draft by vm.draft.observeAsState("")
     // Markwon 全屏共享一份,避免每条消息各自初始化插件链(内存/耗时)
     val screenCtx = LocalContext.current
     val markwon = remember { Markwon.create(screenCtx) }
-    // 自动滚到底(以最后一条消息时间戳为 key:压缩/清空/新增都可靠触发)
-    LaunchedEffect(messages.lastOrNull()?.ts, messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+    // 列表倒序:第 0 项就是最后一条,打开时已经在底部,不会从顶上滚下来。
+    val sessionId = session?.id
+    val listState = remember(sessionId) { androidx.compose.foundation.lazy.LazyListState(0, 0) }
+    var stickToEnd by remember(sessionId) { mutableStateOf(true) }
+    LaunchedEffect(sessionId, listState) {
+        androidx.compose.runtime.snapshotFlow { listState.isScrollInProgress }
+            .collect { scrolling ->
+                if (scrolling && listState.firstVisibleItemIndex > 0) stickToEnd = false
+                if (!scrolling && listState.firstVisibleItemIndex == 0) stickToEnd = true
+            }
+    }
+    LaunchedEffect(sessionId, messages.size, frame) {
+        if (stickToEnd && messages.isNotEmpty()) listState.scrollToItem(0)
     }
 
     WToast(status)
@@ -85,7 +94,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             SmallAction("⟳") { newSessionAsk = true }
         },
     ) {
-        Column(Modifier.fillMaxSize().padding(bottom = 10.dp)) {
+        Column(Modifier.fillMaxSize().padding(bottom = LocalRoundBottom.current)) {
             if (quickPanel) {
                 Column(
                     Modifier
@@ -109,25 +118,18 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             }
             LazyColumn(
                 state = listState,
+                reverseLayout = true,
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = LocalRoundBottom.current),
+                contentPadding = PaddingValues(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 8.dp),
             ) {
-                itemsIndexed(messages, key = { i, m -> "$i-${m.ts}" }) { _, m ->
-                    MessageItem(m, markwon, settings) { text ->
-                        // 翻译:用翻译模型 + 翻译提示词(变量自动替换)
-                        val lang = java.util.Locale.getDefault().displayLanguage
-                        val p = vm.settings.promptTranslate
-                            .replace("{target_lang}", lang)
-                            .replace("{source_text}", text)
-                        vm.send(p, emptyList(), modelOverride = vm.settings.modelTranslate)
-                    }
+                itemsIndexed(messages.asReversed(), key = { _, m -> "${m.role}-${m.ts}" }) { _, m ->
+                    MessageItem(m, markwon, settings)
                 }
-                if (sending) item { Text("思考中…", color = c.hint, fontSize = 12.sp) }
             }
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 30.dp)
+                    .padding(horizontal = 4.dp)
                     .background(c.surface)
                     .border(1.dp, c.border)
                     .clickable { fullscreenInput = true }
@@ -140,7 +142,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                 Text("➤", color = c.accent, fontSize = 18.sp)
             }
         }
-        RotaryList(listState, enabled = currentPage == 1)
+        RotaryList(listState, enabled = currentPage == 1, sign = -1)
     }
 
     // 只在打开详情时才刷新一次,不再在组合期间调用
@@ -168,10 +170,13 @@ private fun detailsText(d: io.github.xhr666.wristchat.ui.chat.ConvDetails): Stri
 
 /** 消息气泡 */
 @Composable
-fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon, settings: SettingsStore, onTranslate: ((String) -> Unit)? = null) {
+fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon, settings: SettingsStore) {
     val c = LocalWrist.current
-    var expanded by remember { mutableStateOf(false) }
     val isUser = m.role == "user"
+    val thinkScroll = androidx.compose.foundation.rememberScrollState()
+    LaunchedEffect(m.reasoning) {
+        if (m.reasoning.isNotEmpty()) thinkScroll.scrollTo(thinkScroll.maxValue)
+    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -180,19 +185,17 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
         horizontalAlignment = if (isUser != settings.messageSwap) Alignment.End else Alignment.Start,
     ) {
         if (!isUser && m.reasoning.isNotBlank()) {
-            Text(if (expanded) "💭 思考过程 ▾" else "💭 思考过程 ▸",
-                color = c.hint, fontSize = 11.sp,
-                modifier = Modifier
+            Text("思考", color = c.hint, fontSize = 10.sp, modifier = Modifier.padding(bottom = 2.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(c.surface)
-                    .clickable { expanded = !expanded }
-                    .padding(horizontal = 8.dp, vertical = 3.dp))
-            if (expanded) {
-                Text(m.reasoning, color = c.hint, fontSize = 12.sp, modifier = Modifier
-                    .padding(top = 2.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(c.surface)
-                    .padding(8.dp))
+                    .verticalScroll(thinkScroll)
+                    .padding(8.dp),
+            ) {
+                Text(m.reasoning, color = c.hint, fontSize = 12.sp, lineHeight = 16.sp)
             }
         }
         Box(
@@ -209,7 +212,11 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
                     Text("共 ${m.imgs.size} 张图片", color = LocalWrist.current.hint, fontSize = 10.sp,
                         modifier = Modifier.padding(bottom = 2.dp))
                 }
-                if (m.content.isNotBlank() || m.imgs.isEmpty()) MsgContent(m.content, isUser, markwon, settings)
+                if (m.content.isBlank() && m.reasoning.isBlank() && !isUser) {
+                    Text("思考中…", color = c.hint, fontSize = 12.sp)
+                } else if (m.content.isNotBlank() || m.imgs.isEmpty()) {
+                    MsgContent(m.content, isUser, markwon, settings)
+                }
             }
         }
         if (!isUser) {
@@ -218,13 +225,6 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
                     Text("tokens:${m.usage?.totalTokens ?: 0} · ¥%.4f".format(m.cost), color = c.hint, fontSize = 9.sp)
                 }
                 val ctx = LocalContext.current
-                if (onTranslate != null && m.content.isNotBlank()) {
-                    Text("  翻译", color = c.accent, fontSize = 10.sp,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onTranslate(m.content) }
-                            .padding(horizontal = 4.dp, vertical = 2.dp))
-                }
                 Text("  复制", color = c.accent, fontSize = 10.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -264,74 +264,30 @@ private fun MsgImage(name: String) {
 
 @Composable
 fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: SettingsStore) {
-    val ctx = LocalContext.current
     val c = LocalWrist.current
-    if (io.github.xhr666.wristchat.ui.chat.Latex.hasMath(text)) {
-        // 公式:优先 KaTeX(美观排版);测量高度;超时未渲染则退回原生可读文本(绝不空白)
-        var webRef by remember { mutableStateOf<io.github.xhr666.wristchat.ui.chat.KatexWebView?>(null) }
-        var hPx by remember { mutableStateOf(0) }
-        var failed by remember { mutableStateOf(false) }
-        val density = ctx.resources.displayMetrics.density
-        LaunchedEffect(text) {
-            hPx = 0; failed = false
-            repeat(12) {
-                kotlinx.coroutines.delay(150)
-                val w = webRef ?: return@repeat
-                w.evaluateJavascript("Math.ceil(document.body.getBoundingClientRect().height)") { v ->
-                    val h = v.trim('"').toIntOrNull() ?: 0
-                    if (h > 0) hPx = h
+    val shown = if (!isUser && io.github.xhr666.wristchat.ui.chat.TextTransform.shouldReverse(settings.textRtl, text) &&
+        !io.github.xhr666.wristchat.ui.chat.Latex.hasMath(text)) {
+        io.github.xhr666.wristchat.ui.chat.TextTransform.reversePerLine(text)
+    } else text
+    val color = c.text.toArgbCompat()
+    AndroidView(
+        factory = { ctx2 ->
+            TextView(ctx2).apply {
+                setTextColor(color)
+                textSize = 14f
+                textAlignment = when (settings.textAlignMode) {
+                    "center" -> android.view.View.TEXT_ALIGNMENT_CENTER
+                    "right" -> android.view.View.TEXT_ALIGNMENT_VIEW_END
+                    else -> android.view.View.TEXT_ALIGNMENT_VIEW_START
                 }
-                if (hPx > 0) {
-                    // 诊断(只记数量,不记内容):确认 KaTeX 是否真的渲染出节点
-                    w.evaluateJavascript("document.querySelectorAll('.katex').length") { n ->
-                        io.github.xhr666.wristchat.data.AppLog.i("katex", "render ok katexNodes=${n.trim('"')} height=${hPx}")
-                    }
-                    return@LaunchedEffect
+                if (settings.textRtl && !io.github.xhr666.wristchat.ui.chat.Latex.hasMath(text)) {
+                    textDirection = android.view.View.TEXT_DIRECTION_RTL
+                    gravity = android.view.Gravity.END
                 }
             }
-            if (hPx == 0) failed = true
-        }
-        if (failed) {
-            Text(
-                io.github.xhr666.wristchat.ui.chat.Latex.pretty(text),
-                color = c.text, fontSize = 14.sp, lineHeight = 20.sp,
-            )
-        } else {
-            AndroidView(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(with(androidx.compose.ui.platform.LocalDensity.current) { (hPx.coerceAtMost(4000) / density).dp }),
-                factory = { ctx2 ->
-                    io.github.xhr666.wristchat.ui.chat.KatexWebView(ctx2).also { webRef = it }
-                },
-                update = { it.render(text) },
-            )
-        }
-    } else {
-        AndroidView(
-            factory = { ctx2 ->
-                TextView(ctx2).apply {
-                    setTextColor(c.text.toArgbCompat())
-                    textSize = 14f
-                    // 逐行从右往左读:纯文本消息才倒序(公式走 LaTeX 渲染分支,不受影响)
-                    val shown = if (io.github.xhr666.wristchat.ui.chat.TextTransform.shouldReverse(settings.textRtl, text)) {
-                        io.github.xhr666.wristchat.ui.chat.TextTransform.reversePerLine(text)
-                    } else text
-                    // 界面偏好:对齐方式 + 每行从右往左读(仅文字;公式仍走 WebView)
-                    textAlignment = when (settings.textAlignMode) {
-                        "center" -> android.view.View.TEXT_ALIGNMENT_CENTER
-                        "right" -> android.view.View.TEXT_ALIGNMENT_VIEW_END
-                        else -> android.view.View.TEXT_ALIGNMENT_VIEW_START
-                    }
-                    if (settings.textRtl) {
-                        textDirection = android.view.View.TEXT_DIRECTION_RTL
-                        gravity = android.view.Gravity.END
-                    }
-                }
-            },
-            update = { tv -> tv.text = markwon.toMarkdown(text) },
-        )
-    }
+        },
+        update = { tv -> RichText.bind(tv, markwon, shown, color) },
+    )
 }
 
 private fun Color.toArgbCompat(): Int = android.graphics.Color.argb(

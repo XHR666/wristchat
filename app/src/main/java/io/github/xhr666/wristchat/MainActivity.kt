@@ -7,6 +7,7 @@ import android.view.View
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import cc.star0.wear.lib.cnwearoverlay.runtime.CnWearOverlay
 import io.github.xhr666.wristchat.ui.RotaryBus
 import io.github.xhr666.wristchat.ui.WristAppRoot
 import io.github.xhr666.wristchat.ui.common.ScaleManager
@@ -58,18 +59,22 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
-        if (ev.action == MotionEvent.ACTION_SCROLL) {
-            // 和参考应用(词典/QQ/Via,都是 View 体系)保持一致:用平台的滚动因子把"格"换算成像素。
-            // RecyclerView/ScrollView 收到 ACTION_SCROLL 时就是这么算的,所以它们的表冠手感是对的。
-            val axis = ev.getAxisValue(MotionEvent.AXIS_SCROLL)
-            val v = if (kotlin.math.abs(axis) > 0.001f) axis else -ev.getAxisValue(MotionEvent.AXIS_VSCROLL)
-            if (kotlin.math.abs(v) > 0.001f) {
-                val factor = android.view.ViewConfiguration.get(this).scaledVerticalScrollFactor
-                RotaryBus.emit((v * factor).toInt())
+        // OPPO 表冠是鼠标滚轮(AXIS_VSCROLL)。cnwearoverlay 在目标机上把它换成旋转编码器的 AXIS_SCROLL。
+        val mapped = CnWearOverlay.rotaryEvent(ev)
+        try {
+            if (mapped.action == MotionEvent.ACTION_SCROLL) {
+                val axis = mapped.getAxisValue(MotionEvent.AXIS_SCROLL)
+                val v = if (kotlin.math.abs(axis) > 0.001f) axis else -mapped.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                if (kotlin.math.abs(v) > 0.001f) {
+                    val factor = android.view.ViewConfiguration.get(this).scaledVerticalScrollFactor
+                    RotaryBus.emit((v * factor).toInt())
+                    return true
+                }
             }
-            return true
+            return super.dispatchGenericMotionEvent(ev)
+        } finally {
+            CnWearOverlay.recycleRotaryEvent(ev, mapped)
         }
-        return super.dispatchGenericMotionEvent(ev)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

@@ -101,12 +101,14 @@ class SessionStore(private val context: Context) {
             try {
                 val o = JSONObject(f.readText())
                 val msgs = msgsOf(o)
-                var briefCost = o.optDouble("totalCost")
-                if (briefCost <= 0.0) {   // 老会话没累计字段:从消息 cost 求和(自愈,避免列表永远显示 0)
-                    var sum = 0.0
-                    for (i in 0 until msgs.length()) sum += msgs.optJSONObject(i)?.optDouble("cost", 0.0) ?: 0.0
-                    briefCost = sum
+                var msgCost = 0.0
+                for (i in 0 until msgs.length()) {
+                    val c = msgs.optJSONObject(i)?.optDouble("cost", 0.0) ?: 0.0
+                    if (c.isFinite() && c > 0.0) msgCost += c
                 }
+                // 会话头里的 totalCost 可能只是标题请求(0.000x)。消息上的 cost 才是对话花费。
+                val stored = o.optDouble("totalCost", 0.0)
+                val briefCost = SessionAccounts.displayCost(if (stored.isNaN()) 0.0 else stored, listOf(msgCost))
                 out.add(SessionBrief(
                     id = o.optString("id"),
                     title = o.optString("title", "新会话"),
@@ -157,8 +159,38 @@ class SessionStore(private val context: Context) {
             totalCost = o.optDouble("totalCost"),
             totalRequests = o.optInt("totalRequests"),
             compressedCount = o.optInt("compressedCount"),
-        )
+        ).also { reconcile(it) }
     } catch (e: Exception) { null }
+
+    /**
+     * 用消息上的 usage/cost 补齐会话头。
+     * 发送路径曾经只把花费写在消息上,会话头停在 0 或只含标题请求。
+     */
+    fun reconcile(s: Session) {
+        var cost = 0.0
+        var hit = 0L
+        var miss = 0L
+        var tokens = 0L
+        var comp = 0L
+        var req = 0
+        for (m in s.messages) {
+            if (m.cost.isFinite() && m.cost > 0.0) cost += m.cost
+            val u = m.usage ?: continue
+            hit += u.cacheHit.toLong()
+            miss += u.cacheMiss.toLong()
+            tokens += u.totalTokens.toLong()
+            comp += u.completionTokens.toLong()
+            req += 1
+        }
+        if (req > 0) {
+            s.totalCacheHit = hit
+            s.totalCacheMiss = miss
+            s.totalTokens = tokens
+            s.totalCompletionTokens = comp
+            if (s.totalRequests < req) s.totalRequests = req
+        }
+        s.totalCost = SessionAccounts.displayCost(s.totalCost, listOf(cost))
+    }
 
     fun save(s: Session) {
         s.updatedAt = System.currentTimeMillis()

@@ -1,7 +1,10 @@
 package io.github.xhr666.wristchat
 
 import io.github.xhr666.wristchat.data.Pricing
+import io.github.xhr666.wristchat.data.SessionAccounts
+import io.github.xhr666.wristchat.data.StreamRender
 import io.github.xhr666.wristchat.ui.chat.Latex
+import io.github.xhr666.wristchat.ui.common.RoundInsets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -144,5 +147,94 @@ class EngineeringRulesTest {
     @Test fun `P4 周末(含调休上班的周末)全天不是 peak`() {
         assertFalse("2026-10-17 周六 10:00", Pricing.isPeak(bjSec(2026, 10, 17, 10)))
         assertFalse("调休上班日 2026-02-14 周六 10:00 仍按空闲", Pricing.isPeak(bjSec(2026, 2, 14, 10)))
+    }
+
+    // ---------- 流式渲染:未闭合符号先原样,闭合后才进 ready ----------
+
+    @Test fun `S1 纯文本全部可渲染`() {
+        val p = StreamRender.split("你好")
+        assertEquals("你好", p.ready)
+        assertEquals("", p.pending)
+    }
+
+    @Test fun `S2 未闭合加粗留在末尾`() {
+        val p = StreamRender.split("先说 **没写完")
+        assertEquals("先说 ", p.ready)
+        assertEquals("**没写完", p.pending)
+    }
+
+    @Test fun `S3 闭合加粗全部可渲染`() {
+        val p = StreamRender.split("**好**了")
+        assertEquals("**好**了", p.ready)
+        assertEquals("", p.pending)
+    }
+
+    @Test fun `S4 未闭合美元公式留在末尾`() {
+        val p = StreamRender.split("式子 ${'$'}x^2")
+        assertEquals("式子 ", p.ready)
+        assertEquals("${'$'}x^2", p.pending)
+    }
+
+    @Test fun `S5 闭合美元公式全部可渲染`() {
+        val p = StreamRender.split("式子 ${'$'}x^2${'$'} 完")
+        assertEquals("式子 ${'$'}x^2${'$'} 完", p.ready)
+        assertEquals("", p.pending)
+    }
+
+    @Test fun `S6 未闭合代码围栏留在末尾`() {
+        val p = StreamRender.split("看\n```kt\nval a")
+        assertEquals("看\n", p.ready)
+        assertTrue(p.pending.startsWith("```"))
+    }
+
+    @Test fun `S7 未闭合方括号公式留在末尾`() {
+        val p = StreamRender.split("前\\[a+b")
+        assertEquals("前", p.ready)
+        assertEquals("\\[a+b", p.pending)
+    }
+
+    // ---------- 会话金额 / 缓存命中率 ----------
+
+    @Test fun `C1 消息花费大于会话头时用消息合计`() {
+        // 会话头只记了标题请求 0.0424,消息上才是对话本身
+        val shown = SessionAccounts.displayCost(0.0424, listOf(1.20, 3.04))
+        assertEquals(4.24, shown, 0.0001)
+    }
+
+    @Test fun `C2 会话头已含标题附加费时不丢掉`() {
+        val shown = SessionAccounts.displayCost(4.30, listOf(4.24))
+        assertEquals(4.30, shown, 0.0001)
+    }
+
+    @Test fun `C3 缓存命中率读消息上的 hit miss`() {
+        val rate = SessionAccounts.cacheHitRate(80, 20, 0, 0)
+        assertEquals(0.8f, rate, 0.0001f)
+    }
+
+    @Test fun `C4 消息没有用量时命中率是 0`() {
+        val rate = SessionAccounts.cacheHitRate(0, 0, 0, 0)
+        assertEquals(0f, rate, 0.0001f)
+    }
+
+    @Test fun `C5 占用刚到 50MB 不提示,超过才提示`() {
+        val limit = SessionAccounts.WARN_BYTES
+        assertFalse(SessionAccounts.shouldWarn(limit))
+        assertTrue(SessionAccounts.shouldWarn(limit + 1))
+        assertFalse(SessionAccounts.shouldWarn(0))
+    }
+
+    // ---------- 圆屏页边 ----------
+
+    @Test fun `R1 顶 12% 底 8%`() {
+        assertEquals(27.96f, RoundInsets.topPad(233f), 0.01f)
+        assertEquals(18.64f, RoundInsets.bottomPad(233f), 0.01f)
+    }
+
+    @Test fun `R2 靠近圆边的左右留白大于圆心`() {
+        val atTop = RoundInsets.chordInset(233f, 233f, RoundInsets.topPad(233f))
+        val atCenter = RoundInsets.chordInset(233f, 233f, 116.5f)
+        assertTrue("顶边留白应明显大于 0,实际 $atTop", atTop > 20f)
+        assertTrue("圆心留白应接近 0,实际 $atCenter", atCenter < 1f)
+        assertTrue(atTop > atCenter)
     }
 }

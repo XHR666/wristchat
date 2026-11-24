@@ -37,6 +37,40 @@ object Http {
         return code to text
     }
 
+    /** 按行读 SSE。成功时 onLine 收到每一行,返回 (code, "");失败时返回错误正文。 */
+    fun postJsonStream(
+        url: String,
+        body: String,
+        bearer: String? = null,
+        timeoutMs: Int = READ_TIMEOUT_CHAT,
+        onLine: (String) -> Unit,
+    ): Pair<Int, String> {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = CONNECT_TIMEOUT
+            readTimeout = timeoutMs
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "text/event-stream")
+            bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
+        }
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        if (code !in 200..299) {
+            val err = conn.errorStream?.readAllBytesSafe() ?: ""
+            conn.disconnect()
+            return code to err
+        }
+        conn.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+            while (true) {
+                val line = reader.readLine() ?: break
+                onLine(line)
+            }
+        }
+        conn.disconnect()
+        return code to ""
+    }
+
     fun get(
         url: String,
         bearer: String? = null,
