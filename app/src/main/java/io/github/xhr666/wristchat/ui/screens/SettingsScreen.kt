@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -100,6 +101,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
     val listState = rememberLazyListState()
     var syncOpen by remember { mutableStateOf(false) }
     var logPage by remember { mutableStateOf<String?>(null) }  // crash / anr / run
+    var sponsorOpen by remember { mutableStateOf(false) }
     var subPage by remember { mutableStateOf<String?>(null) }  // mp_models / mp_prompts
 
     // 分类页/同步页期间锁定横滑翻页:SideEffect 提交后写(不在组合期直接写)
@@ -131,7 +133,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                         "security" -> securityRows(settings, dialogs)
                         "about" -> {
                             updateRows(settings, dialogs)
-                            aboutRows(settings, vm, dialogs) { logPage = it }
+                            aboutRows(settings, vm, dialogs, { logPage = it }, { sponsorOpen = true })
                         }
                         "search" -> searchRows(settings, dialogs)
                         "sync" -> item { WCard("打开同步", "四位 PIN，只在同一局域网") { syncOpen = true } }
@@ -158,6 +160,9 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
         // 同步页 / 日志页:叠在分类页之上,返回时露出分类页
         if (syncOpen) {
             SyncOverlay(settings, vm) { syncOpen = false }
+        }
+        if (sponsorOpen) {
+            SponsorPage { sponsorOpen = false }
         }
         logPage?.let { t ->
             val app = LocalContext.current.applicationContext as WristChatApp
@@ -550,7 +555,8 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController) {
         var pendingApk by remember { mutableStateOf<java.io.File?>(null) }    // 等授权后自动安装
         var resultTitle by remember { mutableStateOf("更新") }
         var progLabel by remember { mutableStateOf<String?>(null) }
-        var cachedKey by remember { mutableStateOf(0) }
+        var cachedKey by remember { mutableIntStateOf(0) }
+        var downloadRepo by remember { mutableStateOf<UpdateRepository?>(null) }
         var autoInstall by remember { mutableStateOf<java.io.File?>(null) }
 
         // 授权页返回 → 自动继续安装(不管用户是右滑返回还是返回键)
@@ -634,6 +640,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController) {
                                     io.github.xhr666.wristchat.data.AppLog.i("upd", "user taps download")
                                     progLabel = null
                                     prog = -1
+                                    downloadRepo = repo
                                     job = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                                         try {
                                             val out = installRelease(ctx, repo, r.info) { done, total ->
@@ -644,6 +651,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController) {
                                             io.github.xhr666.wristchat.data.AppLog.i("upd", "outcome: $out")
                                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                                 prog = null
+                                                cachedKey++
                                                 when (out) {
                                                     is InstallOutcome.Done -> { cachedKey++; d.text(resultTitle, out.text) }
                                                     is InstallOutcome.Failed -> d.text("更新失败", out.text)
@@ -654,6 +662,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController) {
                                             io.github.xhr666.wristchat.data.AppLog.i("upd", "cancelled by user")
                                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                                 prog = null
+                                                cachedKey++
                                                 d.text("已取消", "下载已取消。已下载的部分会保留,下次点更新可续传。")
                                             }
                                             throw e
@@ -682,7 +691,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController) {
         // 已下载但没装上的包:补救入口(与上面的安装/授权流程共用)
         val cachedApk = remember(cachedKey) {
             java.io.File(ctx.cacheDir, "updates").listFiles()
-                ?.filter { it.isFile && it.name.endsWith(".apk") }
+                ?.filter { it.isFile && it.name.endsWith(".apk", true) && it.length() > 0L }
                 ?.maxByOrNull { it.lastModified() }
         }
         WCard("安装已下载的包",
@@ -694,9 +703,21 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController) {
         prog?.let { p ->
             CompactDialog(
                 title = if (progLabel != null) "安装更新" else "下载更新",
-                onDismiss = {},
+                onDismiss = {
+                    downloadRepo?.cancelDownload()
+                    job?.cancel()
+                    prog = null
+                    progLabel = null
+                    cachedKey++
+                },
                 dismissText = "取消",
-                onDismissButton = { job?.cancel() },
+                onDismissButton = {
+                    downloadRepo?.cancelDownload()
+                    job?.cancel()
+                    prog = null
+                    progLabel = null
+                    cachedKey++
+                },
             ) {
                 Text(progLabel ?: (if (p < 0) "连接中…" else "下载中 $p%"),
                     color = LocalWrist.current.text, fontSize = 13.sp)
@@ -707,6 +728,8 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController) {
 }
 
 private fun LazyListScope.securityRows(s: SettingsStore, d: DialogController) {
+    item { WToggle("后台时遮住内容", s.blankInBackground) { s.blankInBackground = it } }
+    item { WCard("说明", "打开后，离开应用时最近任务里看不到对话。回到应用后内容还在。") }
     item { WToggle("启动密码", s.passwordEnabled) { on ->
         if (on) d.input("设置密码(4 位数字)", "", pw = true, ok = "开启") { pin ->
             if (pin.length == 4 && pin.all { it.isDigit() }) {
@@ -719,8 +742,12 @@ private fun LazyListScope.securityRows(s: SettingsStore, d: DialogController) {
     item { WCard("免密次数", s.graceDefault.toString()) { d.num("未来 N 次免密(0=每次都输)", s.graceDefault.toFloat(), 0f, 50f) { s.graceDefault = it.toInt(); s.graceLeft = it.toInt() } } }
 }
 
-private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController, openLog: (String) -> Unit) {
+private fun LazyListScope.aboutRows(
+    s: SettingsStore, vm: SettingsViewModel, d: DialogController,
+    openLog: (String) -> Unit, openSponsor: () -> Unit,
+) {
     item { WCard("开源许可", "MIT + 第三方库") { d.text("开源许可", licenseText()) } }
+    item { WCard("赞助", "爱发电") { openSponsor() } }
     item {
         WCard("会话文件自检", "磁盘上有哪些会话、是否能解析") { openLog("sess") }
         WCard("查看崩溃日志", "crash.log · 闪退堆栈") { openLog("crash") }
@@ -795,6 +822,45 @@ private fun MemoryDialog(vm: SettingsViewModel, onClose: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun SponsorPage(onBack: () -> Unit) {
+    val url = "https://afdian.com/a/xferoni66"
+    val ctx = LocalContext.current
+    val c = LocalWrist.current
+    val qr = remember { QrImages.bitmap(url, 240) }
+    val dialogs = remember { DialogController() }
+    SwipeBackContainer(onBack = onBack) {
+        ScreenScaffold(title = "赞助", actions = { SmallAction("‹") { onBack() } }, onHeaderSwipeBack = onBack) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState())
+                    .padding(horizontal = 36.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("如果这块表上的对话对你有用，可以在爱发电支持后续更新。谢谢。",
+                    color = c.text, fontSize = 13.sp, lineHeight = 18.sp)
+                Spacer(Modifier.height(8.dp))
+                androidx.compose.foundation.Image(
+                    bitmap = qr.asImageBitmap(),
+                    contentDescription = "爱发电二维码",
+                    modifier = Modifier.size(120.dp),
+                )
+                Text("爱发电", color = c.hint, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                Text(url, color = c.accent, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp).clickable {
+                    dialogs.confirm("即将离开", "将打开浏览器", ok = "继续") {
+                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                    }
+                })
+                Text("复制链接", color = c.accent, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp).clickable {
+                    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("afdian", url))
+                    android.widget.Toast.makeText(ctx, "已复制", android.widget.Toast.LENGTH_SHORT).show()
+                })
+            }
+        }
+    }
+    WDialogHost(dialogs)
 }
 
 private const val LICENSE_TEXT = """

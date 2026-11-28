@@ -183,6 +183,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_CROWN_HAPTIC, false)
         set(v) = prefs.edit().putBoolean(KEY_CROWN_HAPTIC, v).apply()
 
+    /** 离开应用后，最近任务里不显示界面内容。 */
+    var blankInBackground: Boolean
+        get() = prefs.getBoolean(KEY_BLANK_BG, false)
+        set(v) = prefs.edit().putBoolean(KEY_BLANK_BG, v).apply()
+
     /** 文字对齐:left / center / right */
     var textAlignMode: String
         get() = prefs.getString(KEY_TEXT_ALIGN, "left") ?: "left"
@@ -433,6 +438,7 @@ Requirements:
         private const val KEY_AUTO_COMPRESS = "auto_compress"
         private const val KEY_AUTO_SCROLL = "auto_scroll"
         private const val KEY_CROWN_HAPTIC = "crown_haptic"
+        private const val KEY_BLANK_BG = "blank_bg"
         private const val KEY_PROVIDER_KEYS = "provider_keys"
         private const val KEY_TEXT_ALIGN = "text_align"
         private const val KEY_TEXT_RTL = "text_rtl"

@@ -285,6 +285,26 @@ class EngineeringRulesTest {
         assertFalse(io.github.xhr666.wristchat.data.NetRetry.again(500, 2, 2))
     }
 
+    @Test fun `L4 两个反斜杠的命令要收成一个`() {
+        val src = "\\\\frac{1}{2}"
+        val out = io.github.xhr666.wristchat.data.LatexBodies.normalize(src)
+        assertEquals("\\frac{1}{2}", out)
+        assertFalse(out.startsWith("\\\\"))
+    }
+
+    @Test fun `E1 流式两段要拼起来，不能只留最后一段`() {
+        val lines = listOf(
+            """data: {"choices":[{"delta":{"content":"你","reasoning_content":null}}]}""",
+            """data: {"choices":[{"delta":{"content":"好","reasoning_content":"先"}}]}""",
+        )
+        val (content, reasoning) = io.github.xhr666.wristchat.data.SseChunk.fold(lines)
+        assertEquals("你好", content)
+        assertEquals("先", reasoning)
+        val onlyFirst = io.github.xhr666.wristchat.data.SseChunk.fold(lines.take(1)).first
+        assertEquals("你", onlyFirst)
+        assertFalse(onlyFirst == content)
+    }
+
     @Test fun `L3 公式环境能被抽出来`() {
         val bodies = io.github.xhr666.wristchat.data.LatexBodies.extract("见 \\[a+b\\] 和 \$x\$")
         assertEquals(2, bodies.size)
@@ -299,10 +319,17 @@ class EngineeringRulesTest {
         assertEquals("通义千问", io.github.xhr666.wristchat.data.ProviderLabel.of("通义千问", false))
     }
 
-    @Test fun `S2 收起后偏移不会跳到下一项`() {
-        assertEquals(79, io.github.xhr666.wristchat.ui.ScrollAnchor.clamp(400, 80))
-        assertEquals(10, io.github.xhr666.wristchat.ui.ScrollAnchor.clamp(10, 80))
-        assertEquals(0, io.github.xhr666.wristchat.ui.ScrollAnchor.clamp(5, 0))
+    @Test fun `U2 比已安装版本新的包才保留`() {
+        assertTrue(io.github.xhr666.wristchat.data.UpdateApk.newerThanInstalled(53, 52))
+        assertFalse(io.github.xhr666.wristchat.data.UpdateApk.newerThanInstalled(52, 52))
+        assertFalse(io.github.xhr666.wristchat.data.UpdateApk.newerThanInstalled(51, 52))
+    }
+
+    @Test fun `S2 收起后把标题拉回原位，不跳到消息末尾`() {
+        assertEquals(0f, io.github.xhr666.wristchat.ui.ScrollAnchor.hold(100f, 100f), 0.01f)
+        assertEquals(36f, io.github.xhr666.wristchat.ui.ScrollAnchor.hold(80f, 116f), 0.01f)
+        assertEquals(-20f, io.github.xhr666.wristchat.ui.ScrollAnchor.hold(100f, 80f), 0.01f)
+        assertFalse(io.github.xhr666.wristchat.ui.ScrollAnchor.hold(10f, 80f) == 79f)
     }
 
     @Test fun `N1 JSON null 不会变成字符串 null`() {

@@ -18,7 +18,23 @@ class MainActivity : ComponentActivity() {
 
     /** 每次"真正回到前台"递增 → 触发重新校验启动密码 */
     private val foregroundEpoch = androidx.compose.runtime.mutableStateOf(0)
+    private val contentCovered = androidx.compose.runtime.mutableStateOf(false)
     private var stoppedAt = 0L
+
+    override fun onPause() {
+        if (settings.blankInBackground) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            contentCovered.value = true
+        }
+        super.onPause()
+    }
+
+    override fun onResume() {
+        contentCovered.value = false
+        if (settings.blankInBackground) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        super.onResume()
+    }
 
     override fun onStop() {
         super.onStop()
@@ -49,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         setContent {
-            WristAppRoot(settings, foregroundEpoch.value)
+            WristAppRoot(settings, foregroundEpoch.value, contentCovered.value)
         }
     }
 

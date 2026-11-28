@@ -3,6 +3,7 @@ package io.github.xhr666.wristchat.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -26,13 +27,14 @@ object LockGate {
 }
 
 @Composable
-fun WristAppRoot(settings: SettingsStore, foregroundEpoch: Int = 0) {
+fun WristAppRoot(settings: SettingsStore, foregroundEpoch: Int = 0, covered: Boolean = false) {
     val palette = when (settings.theme) { "light" -> Light; "dark" -> Dark; else -> Amoled }
     val scheme = if (settings.theme == "light")
         lightColorScheme(primary = palette.accent, background = palette.bg, surface = palette.surface)
     else darkColorScheme(primary = palette.accent, background = palette.bg, surface = palette.surface)
 
     MaterialTheme(colorScheme = scheme) {
+        Box(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalWrist provides palette) {
             // 每次真正回到前台重新判定(免密次数按"进入次数"扣)
             var locked by remember(foregroundEpoch) { mutableStateOf(needLock(settings)) }
@@ -41,6 +43,8 @@ fun WristAppRoot(settings: SettingsStore, foregroundEpoch: Int = 0) {
             } else {
                 HomePager(settings)
             }
+        }
+        if (covered) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black))
         }
     }
 }
@@ -105,18 +109,6 @@ fun HomePager(settings: SettingsStore) {
                 }.getOrNull()
             }
             if (!found.isNullOrBlank()) io.github.xhr666.wristchat.data.Notices.updateReady(app, found)
-        }
-        var warm by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            kotlinx.coroutines.delay(900)
-            warm = true
-        }
-        if (warm) {
-            Box(Modifier.size(0.dp)) {
-                SessionsScreen(settings, chatVm) {}
-                BalanceScreen(settings)
-                SettingsMenuScreen(settings)
-            }
         }
     }
 }

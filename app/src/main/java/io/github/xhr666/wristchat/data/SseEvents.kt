@@ -17,13 +17,16 @@ object SseEvents {
         if (!trimmed.startsWith("data:")) return null
         val payload = trimmed.removePrefix("data:").trim()
         if (payload == "[DONE]") return Delta(done = true)
-        val root = try { JSONObject(payload) } catch (_: Exception) { return null }
-        val choice = root.optJSONArray("choices")?.optJSONObject(0)
+        val content = SseChunk.deltaField(payload, "content")
+        val reasoning = SseChunk.deltaField(payload, "reasoning_content")
+        val root = try { JSONObject(payload) } catch (_: Exception) { null }
+        if (root == null && content.isEmpty() && reasoning.isEmpty()) return null
+        val choice = root?.optJSONArray("choices")?.optJSONObject(0)
         val delta = choice?.optJSONObject("delta") ?: choice?.optJSONObject("message")
-        val usage = root.optJSONObject("usage")?.let { UsageJson.parse(it) }
+        val usage = root?.optJSONObject("usage")?.let { UsageJson.parse(it) }
         return Delta(
-            content = JsonText.of(delta, "content"),
-            reasoning = JsonText.of(delta, "reasoning_content"),
+            content = content.ifEmpty { JsonText.of(delta, "content") },
+            reasoning = reasoning.ifEmpty { JsonText.of(delta, "reasoning_content") },
             usage = usage,
             raw = root,
         )

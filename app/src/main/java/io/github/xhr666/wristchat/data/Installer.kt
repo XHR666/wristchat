@@ -18,8 +18,11 @@ object Installer {
 
     const val ACTION_RESULT = "io.github.xhr666.wristchat.INSTALL_RESULT"
 
-    fun canInstall(ctx: Context): Boolean =
+    fun canInstall(ctx: Context): Boolean = try {
         ctx.packageManager.canRequestPackageInstalls()
+    } catch (_: SecurityException) {
+        false
+    }
 
     fun openManageUnknownSources(ctx: Context) {
         val intent = Intent(

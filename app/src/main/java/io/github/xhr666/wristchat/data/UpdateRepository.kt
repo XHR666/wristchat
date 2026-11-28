@@ -2,6 +2,7 @@ package io.github.xhr666.wristchat.data
 
 import org.json.JSONArray
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import org.json.JSONObject
 import java.io.File
 
@@ -23,6 +24,13 @@ sealed class UpdateResult {
 
 /** GitHub Releases 检查/下载(公开仓库,无需 token) */
 class UpdateRepository(private val settings: SettingsStore) {
+
+    private val liveConn = java.util.concurrent.atomic.AtomicReference<java.net.HttpURLConnection?>(null)
+
+    /** 立刻断开正在进行的下载，让「连接中」也能取消。 */
+    fun cancelDownload() {
+        try { liveConn.getAndSet(null)?.disconnect() } catch (_: Exception) {}
+    }
 
     suspend fun check(): UpdateResult {
         val owner = settings.repoOwner
@@ -114,17 +122,26 @@ class UpdateRepository(private val settings: SettingsStore) {
         var conn: java.net.HttpURLConnection? = null
         var input: java.io.InputStream? = null
         var output: java.io.OutputStream? = null
+        var opened: java.net.HttpURLConnection? = null
         return try {
             val existing = if (resume) target.length() else 0L
-            conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+            val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
                 connectTimeout = 15000
                 readTimeout = 30000
                 setRequestProperty("Accept", "application/octet-stream")
                 if (existing > 0) setRequestProperty("Range", "bytes=$existing-")
             }
-            val code = conn.responseCode
-            if (code !in 200..299 && code != 206) return false
-            input = conn.inputStream
+            conn = connection
+            opened = connection
+            liveConn.set(connection)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val code = connection.responseCode
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (code !in 200..299 && code != 206) {
+                liveConn.compareAndSet(connection, null)
+                return false
+            }
+            input = connection.inputStream
             if (code == 206 && existing > 0) {
                 output = java.io.FileOutputStream(target, true) // append 续传
             } else {
@@ -132,7 +149,7 @@ class UpdateRepository(private val settings: SettingsStore) {
                 target.outputStream().close()
                 output = target.outputStream()
             }
-            val total = if (conn.contentLengthLong > 0) existing + conn.contentLengthLong else existing
+            val total = if (connection.contentLengthLong > 0) existing + connection.contentLengthLong else existing
             val buf = ByteArray(64 * 1024)
             var done = existing
             var read: Int
@@ -148,16 +165,23 @@ class UpdateRepository(private val settings: SettingsStore) {
             output.close(); output = null
             input.close(); input = null
             conn.disconnect(); conn = null
+            liveConn.compareAndSet(opened, null)
             true
         } catch (e: kotlinx.coroutines.CancellationException) {
             // 主动取消:保留部分文件,交给上层语义(下次续传)
             try { output?.close() } catch (_: Exception) {}
             try { input?.close() } catch (_: Exception) {}
+            try { conn?.disconnect() } catch (_: Exception) {}
+            liveConn.compareAndSet(opened, null)
             throw e
         } catch (e: Exception) {
             try { output?.close() } catch (_: Exception) {}
             try { input?.close() } catch (_: Exception) {}
             try { conn?.disconnect() } catch (_: Exception) {}
+            liveConn.compareAndSet(opened, null)
+            if (!kotlinx.coroutines.currentCoroutineContext().isActive) {
+                throw kotlinx.coroutines.CancellationException("下载已取消")
+            }
             false // 保留 partial,下次自动续传
         }
     }

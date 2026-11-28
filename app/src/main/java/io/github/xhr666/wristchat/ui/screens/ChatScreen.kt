@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -27,6 +28,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import io.github.xhr666.wristchat.data.ThinkLabel
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +65,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
 
     val frame by vm.frame.observeAsState(0)
     val streamingTs by vm.streamingTs.observeAsState(0L)
+    val liveContent by vm.liveContent.observeAsState("")
+    val liveReason by vm.liveReason.observeAsState("")
     val thinkStart by vm.thinkStartMs.observeAsState(0L)
     val messages = session?.messages ?: emptyList()
     val draft by vm.draft.observeAsState("")
@@ -136,6 +141,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                         m, markwon, settings, listState,
                         streaming = m.ts == streamingTs && streamingTs != 0L,
                         thinkStartMs = thinkStart,
+                        liveContent = if (m.ts == streamingTs && streamingTs != 0L) liveContent else null,
+                        liveReason = if (m.ts == streamingTs && streamingTs != 0L) liveReason else null,
                     )
                 }
             }
@@ -199,6 +206,8 @@ fun MessageItem(
     listState: androidx.compose.foundation.lazy.LazyListState,
     streaming: Boolean = false,
     thinkStartMs: Long = 0L,
+    liveContent: String? = null,
+    liveReason: String? = null,
 ) {
     val c = LocalWrist.current
     val isUser = m.role == "user"
@@ -209,8 +218,10 @@ fun MessageItem(
         // 左右互换:开启后用户消息在左、智能体在右
         horizontalAlignment = if (isUser != settings.messageSwap) Alignment.End else Alignment.Start,
     ) {
-        if (!isUser && m.reasoning.isNotBlank()) {
-            ThinkBlock(m, streaming, thinkStartMs, listState)
+        val reason = if (streaming && !liveReason.isNullOrEmpty()) liveReason else m.reasoning
+        val body = if (streaming && liveContent != null) liveContent else m.content
+        if (!isUser && reason.isNotBlank()) {
+            ThinkBlock(m.copy(reasoning = reason), streaming, thinkStartMs, listState)
         }
         if (!isUser && m.toolNote.isNotBlank()) {
             Text(m.toolNote, color = c.hint, fontSize = 11.sp, lineHeight = 14.sp,
@@ -230,10 +241,10 @@ fun MessageItem(
                     Text("共 ${m.imgs.size} 张图片", color = LocalWrist.current.hint, fontSize = 10.sp,
                         modifier = Modifier.padding(bottom = 2.dp))
                 }
-                if (m.content.isBlank() && m.reasoning.isBlank() && !isUser) {
+                if (body.isBlank() && reason.isBlank() && !isUser) {
                     Text(if (streaming) "正在输出…" else "思考中…", color = c.hint, fontSize = 12.sp)
-                } else if (m.content.isNotBlank() || m.imgs.isEmpty()) {
-                    MsgContent(m.content, isUser, markwon, settings, streaming = streaming && !isUser)
+                } else if (body.isNotBlank() || m.imgs.isEmpty()) {
+                    MsgContent(body, isUser, markwon, settings, streaming = streaming && !isUser)
                 }
             }
         }
@@ -285,11 +296,13 @@ private fun ThinkBlock(
         ((now - thinkStartMs).coerceAtLeast(0L)) / 1000L
     } else m.reasoningMs / 1000L
     val scope = rememberCoroutineScope()
+    var headerY by remember { mutableFloatStateOf(Float.NaN) }
     val gate = remember {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.UserInput && scroll.value < scroll.maxValue - 8) follow = false
-                return available
+                // 思考框到顶或到底后,剩下的滑动交给整页。
+                return Offset.Zero
             }
         }
     }
@@ -302,7 +315,10 @@ private fun ThinkBlock(
         if (streaming && follow) scroll.scrollTo(scroll.maxValue)
     }
     Column(Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.onGloballyPositioned { headerY = it.positionInRoot().y },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 if (streaming) ThinkLabel.streaming(seconds) else ThinkLabel.done(seconds),
                 color = c.hint, fontSize = 11.sp, modifier = Modifier.weight(1f, fill = false),
@@ -316,15 +332,14 @@ private fun ThinkBlock(
                             wide = !wide
                             if (wide) follow = true
                         } else {
-                            val index = listState.firstVisibleItemIndex
-                            val offset = listState.firstVisibleItemScrollOffset
+                            val y0 = headerY
                             open = !open
                             scope.launch {
-                                androidx.compose.runtime.withFrameNanos { }
-                                androidx.compose.runtime.withFrameNanos { }
-                                val size = listState.layoutInfo.visibleItemsInfo
-                                    .firstOrNull { it.index == index }?.size ?: 0
-                                listState.scrollToItem(index, ScrollAnchor.clamp(offset, size))
+                                repeat(2) {
+                                    androidx.compose.runtime.withFrameNanos { }
+                                    val dy = ScrollAnchor.hold(y0, headerY)
+                                    if (dy != 0f) listState.scroll { scrollBy(dy) }
+                                }
                             }
                         }
                     }

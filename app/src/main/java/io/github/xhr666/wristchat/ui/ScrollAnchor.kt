@@ -1,9 +1,10 @@
 package io.github.xhr666.wristchat.ui
 
-/** 列表项变矮之后，把滚动偏移夹在这项里面，避免跳到别的消息。 */
+/** 收起思考后，把标题拉回原来的屏幕位置，而不是跳到消息末尾。 */
 object ScrollAnchor {
-    fun clamp(offset: Int, itemSize: Int): Int {
-        if (itemSize <= 1) return 0
-        return offset.coerceIn(0, itemSize - 1)
+    fun hold(yBefore: Float, yAfter: Float): Float {
+        if (yBefore.isNaN() || yAfter.isNaN()) return 0f
+        val dy = yAfter - yBefore
+        return if (kotlin.math.abs(dy) < 1f) 0f else dy
     }
 }

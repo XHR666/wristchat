@@ -17,6 +17,7 @@ import io.github.xhr666.wristchat.data.SettingsStore
 import io.github.xhr666.wristchat.data.SkillStore
 import io.github.xhr666.wristchat.data.TokenUsage
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class ConvDetails(
@@ -61,6 +62,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _title = MutableLiveData("")
     val title: LiveData<String> = _title
+
+    /** 正在流式输出的正文。直接 post,不经过会在主线程写盘的队列。 */
+    private val _liveContent = MutableLiveData("")
+    val liveContent: LiveData<String> = _liveContent
+    private val _liveReason = MutableLiveData("")
+    val liveReason: LiveData<String> = _liveReason
 
     /** 流式增量不会换 Session 实例,用这个计数让界面重组。 */
     private val _frame = MutableLiveData(0)
@@ -320,31 +327,39 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         thinkStart = 0L
         _thinkStart.value = 0L
         _streamingTs.value = aiTs
+        _liveContent.value = ""
+        _liveReason.value = ""
 
         viewModelScope.launch {
             // 上下文压缩检查
             maybeCompress(s)
             // 历史不含刚追加的这条用户消息和占位回复(仓库会把提问作为本轮带上去)
             val history = s.messages.filter { it !== userMsg && it.ts != aiTs }
-            val updates = Channel<Triple<String, String, String>>(Channel.CONFLATED)
-            val paint = launch(kotlinx.coroutines.Dispatchers.Main) {
-                var n = 0
-                for ((c, r, note) in updates) {
-                    if (r.isNotEmpty() && thinkStart == 0L) {
-                        thinkStart = System.currentTimeMillis()
-                        _thinkStart.value = thinkStart
+            val keep = launch(kotlinx.coroutines.Dispatchers.IO) {
+                while (isActive) {
+                    kotlinx.coroutines.delay(2000)
+                    val c = _liveContent.value.orEmpty()
+                    val r = _liveReason.value.orEmpty()
+                    if (c.isEmpty() && r.isEmpty()) continue
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        replaceAssistant(s, aiTs, c, r, null, 0.0, incomplete = true)
                     }
-                    replaceAssistant(s, aiTs, c, r, null, 0.0, toolNote = note, incomplete = true)
-                    if (n++ % 6 == 0) sessionStore.save(s)
+                    sessionStore.save(s)
                 }
             }
             val result = repo.chat(history, trimmed, imageFiles = imageFiles,
                 enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK,
                 modelOverride = modelOverride,
-                onStatus = { _status.value = it },
-                onPartial = { c, r, note -> updates.trySend(Triple(c, r, note)) })
-            updates.close()
-            paint.join()
+                onStatus = { _status.postValue(it) },
+                onPartial = { c, r, _ ->
+                    _liveContent.postValue(c)
+                    _liveReason.postValue(r)
+                    if (r.isNotEmpty() && thinkStart == 0L) {
+                        thinkStart = System.currentTimeMillis()
+                        _thinkStart.postValue(thinkStart)
+                    }
+                })
+            keep.cancel()
             when (result) {
                 is ChatResult.Success -> {
                     val elapsed = if (thinkStart == 0L) 0L else System.currentTimeMillis() - thinkStart
@@ -377,6 +392,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             _sending.value = false
             _streamingTs.value = 0L
+            _liveContent.value = ""
+            _liveReason.value = ""
             _thinkStart.value = 0L
             thinkStart = 0L
             refreshDetails()

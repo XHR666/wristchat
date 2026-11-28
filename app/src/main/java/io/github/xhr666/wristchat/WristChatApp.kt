@@ -2,6 +2,7 @@ package io.github.xhr666.wristchat
 
 import android.app.Application
 import io.github.xhr666.wristchat.data.SettingsStore
+import io.github.xhr666.wristchat.data.UpdateApk
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -15,11 +16,28 @@ class WristChatApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // 已安装完的更新包不再留着:启动时清掉 cacheDir/updates 下的 apk
+        // 只删已经不比当前版本新的包。下载完但没装上的包留着,给「安装已下载的包」用。
         runCatching {
             Thread {
+                val installed = if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    packageManager.getPackageInfo(packageName, 0).longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.getPackageInfo(packageName, 0).versionCode.toLong()
+                }
                 java.io.File(cacheDir, "updates").listFiles()?.forEach { f ->
-                    if (f.name.endsWith(".apk", true) || f.name.endsWith(".apk.sha256")) f.delete()
+                    if (!f.name.endsWith(".apk", true)) {
+                        if (f.name.endsWith(".apk.sha256", true)) f.delete()
+                        return@forEach
+                    }
+                    val info = packageManager.getPackageArchiveInfo(f.absolutePath, 0)
+                    val code = if (info == null) Long.MAX_VALUE
+                    else if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode
+                    else {
+                        @Suppress("DEPRECATION")
+                        info.versionCode.toLong()
+                    }
+                    if (!UpdateApk.newerThanInstalled(code, installed)) f.delete()
                 }
             }.start()
         }

@@ -10,6 +10,24 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -109,8 +127,12 @@ fun Modifier.centerFocus(maxShrink: Float = 0.14f, maxDim: Float = 0.45f): Modif
             val cy = c.positionInRoot().y + c.size.height / 2f
             val half = (screenHpx / 2f).coerceAtLeast(1f)
             val d = (kotlin.math.abs(cy - half) / half).coerceIn(0f, 1f)
-            scale.floatValue = 1f - maxShrink * d
-            alpha.floatValue = 1f - maxDim * d
+            val nextScale = 1f - maxShrink * d
+            val nextAlpha = 1f - maxDim * d
+            if (kotlin.math.abs(nextScale - scale.floatValue) > 0.03f) {
+                scale.floatValue = nextScale
+                alpha.floatValue = nextAlpha
+            }
         }
         .graphicsLayer {
             scaleX = scale.floatValue
@@ -352,10 +374,16 @@ fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
         .border(1.dp, c.border, shape)
     m = if (onLongClick != null) m.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick)
     else if (onClick != null) m.clickable { onClick() } else m
-    Column(m.padding(horizontal = 17.dp, vertical = 16.dp)) {
-        Text(title, color = c.text, fontSize = 16.sp)
-        if (value.isNotEmpty()) Text(value, color = c.hint, fontSize = 12.5.sp, lineHeight = 16.sp,
-            modifier = Modifier.padding(top = 3.dp))
+    Column(m.padding(horizontal = 12.dp, vertical = 14.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(SettingGlyph.of(title), contentDescription = null, tint = c.accent,
+                modifier = Modifier.sizeIn(maxWidth = 16.dp, maxHeight = 16.dp).size(16.dp))
+            Column(Modifier.padding(start = 8.dp).weight(1f)) {
+                Text(title, color = c.text, fontSize = 16.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                if (value.isNotEmpty()) Text(value, color = c.hint, fontSize = 12.5.sp, lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 3.dp))
+            }
+        }
     }
 }
 
@@ -451,7 +479,11 @@ fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onCh
             .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = c.text, fontSize = 14.5.sp, modifier = Modifier.weight(1f))
+        Icon(SettingGlyph.of(title), contentDescription = null, tint = c.accent,
+            modifier = Modifier.sizeIn(maxWidth = 16.dp, maxHeight = 16.dp).size(16.dp))
+        Text(title, color = c.text, fontSize = 14.5.sp, maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 8.dp))
         SmallToggle(checked)
     }
 }

@@ -68,11 +68,23 @@ object Http {
             conn.disconnect()
             return code to err
         }
-        conn.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+        conn.inputStream.reader(Charsets.UTF_8).use { reader ->
+            val buf = CharArray(128)
+            val pending = StringBuilder()
             while (true) {
-                val line = reader.readLine() ?: break
-                onLine(line)
+                val n = reader.read(buf)
+                if (n < 0) break
+                pending.append(buf, 0, n)
+                while (true) {
+                    val nl = pending.indexOf("\n")
+                    if (nl < 0) break
+                    val line = pending.substring(0, nl).trimEnd('\r')
+                    pending.delete(0, nl + 1)
+                    if (line.isNotEmpty()) onLine(line)
+                }
             }
+            val tail = pending.toString().trim()
+            if (tail.isNotEmpty()) onLine(tail)
         }
         conn.disconnect()
         return code to ""

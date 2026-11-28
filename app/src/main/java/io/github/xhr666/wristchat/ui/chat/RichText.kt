@@ -22,7 +22,8 @@ object RichText {
     @Volatile private var inited = false
 
     fun bind(tv: TextView, markwon: Markwon, source: String, color: Int) {
-        val parts = StreamRender.split(source)
+        val text = LatexBodies.normalize(source)
+        val parts = StreamRender.split(text)
         val spanned = SpannableStringBuilder()
         for (seg in segments(parts.ready)) {
             when (seg) {
