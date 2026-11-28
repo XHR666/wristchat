@@ -1,8 +1,12 @@
 package io.github.xhr666.wristchat
 
+import io.github.xhr666.wristchat.data.FormulaText
+import io.github.xhr666.wristchat.data.JsonText
 import io.github.xhr666.wristchat.data.Pricing
 import io.github.xhr666.wristchat.data.SessionAccounts
 import io.github.xhr666.wristchat.data.StreamRender
+import io.github.xhr666.wristchat.data.ThinkLabel
+import io.github.xhr666.wristchat.data.WebTools
 import io.github.xhr666.wristchat.ui.chat.Latex
 import io.github.xhr666.wristchat.ui.common.RoundInsets
 import org.junit.Assert.assertEquals
@@ -228,6 +232,53 @@ class EngineeringRulesTest {
     @Test fun `R1 顶 12% 底 8%`() {
         assertEquals(27.96f, RoundInsets.topPad(233f), 0.01f)
         assertEquals(18.64f, RoundInsets.bottomPad(233f), 0.01f)
+    }
+
+    @Test fun `F1 pgfplots 不走绘图并留下可读文本`() {
+        val src = "\\begin{tikzpicture}\\begin{axis}\\addplot{x};\\end{axis}\\end{tikzpicture}"
+        assertTrue(FormulaText.unsupported(src))
+        val shown = FormulaText.fallback(src)
+        assertTrue("回退文本是空的", shown.isNotBlank())
+    }
+
+    @Test fun `F2 普通公式不算作图`() {
+        assertFalse(FormulaText.unsupported("\\frac{1}{2}"))
+    }
+
+    @Test fun `T1 思考标题`() {
+        assertEquals("思考中(用时3秒)", ThinkLabel.streaming(3))
+        assertEquals("已思考(用时8秒)", ThinkLabel.done(8))
+        assertEquals("已思考", ThinkLabel.done(0))
+    }
+
+    @Test fun `W1 联网工具不和记忆函数同时声明`() {
+        val types = WebTools.toolTypes(web = true, memory = true)
+        assertEquals(listOf(WebTools.SEARCH, WebTools.READ_URL), types)
+        assertFalse(types.contains("memory_tool"))
+    }
+
+    @Test fun `N1 JSON null 不会变成字符串 null`() {
+        assertEquals("", JsonText.fromRaw(null))
+        assertEquals("", JsonText.fromRaw(org.json.JSONObject.NULL))
+        assertEquals("先想", JsonText.fromRaw("先想"))
+        assertEquals("", JsonText.fromRaw(3))
+    }
+
+    @Test fun `F1 图表公式回退成说明而不是空白`() {
+        val out = FormulaText.fallback("\\begin{axis}\\addplot{x};\\end{axis}")
+        assertTrue(out.contains("图表"))
+        assertFalse(out.isBlank())
+    }
+
+    @Test fun `F2 普通公式画失败时仍有可读文本`() {
+        val out = FormulaText.fallback("\\sqrt{2}")
+        assertEquals("√(2)", out)
+    }
+
+    @Test fun `T1 思考中和已思考文案`() {
+        assertTrue(ThinkLabel.streaming(3).startsWith("思考中"))
+        assertTrue(ThinkLabel.done(3).startsWith("已思考"))
+        assertFalse(ThinkLabel.done(3).contains("思考中"))
     }
 
     @Test fun `R2 靠近圆边的左右留白大于圆心`() {

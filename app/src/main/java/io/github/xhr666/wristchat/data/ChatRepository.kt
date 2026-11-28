@@ -13,6 +13,8 @@ sealed class ChatResult {
         val cost: Double,
         val memoryOps: List<MemoryOp> = emptyList(),
         val model: String,
+        val serverToolCalls: String = "",
+        val citations: String = "",
     ) : ChatResult()
 
     data class Error(val message: String, val httpCode: Int = 0) : ChatResult()
@@ -96,10 +98,11 @@ class ChatRepository(
         settings.systemPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(0, it) }
         settings.customPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
         SkillStoreProvider.skillsPrompt?.takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
+        val web = settings.webTools && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
         if (enableMemory) {
             memory.buildMemoriesTag().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
-            // 显式指示模型使用记忆工具,否则它往往"看到工具但不调用"
-            sysParts.add(
+            // 联网工具和 memory_tool 不能同时声明。联网开着时只把记忆放进上下文。
+            if (!web) sysParts.add(
                 "长期记忆规则:当用户表达需要长期记住的信息(如\"记住…\"\"以后都…\"\"我喜欢/我不喜欢…\"、称呼、偏好、计划)时," +
                 "必须调用 memory_tool(action=create) 保存;需要修正时先看 <memories> 中已有 id 再 action=edit;过期内容 action=delete。" +
                 "不要为一次性、临时内容调用;不要在回复里复述工具调用过程。"
@@ -114,8 +117,11 @@ class ChatRepository(
         // 历史(不含 reasoning_content:官方规则——无 tools 时忽略;带 tools 时回传)
         history.forEach { m ->
             val o = JSONObject().put("role", m.role).put("content", contentOf(m, vision))
-            if (enableMemory && m.role == "assistant" && m.reasoning.isNotBlank()) {
+            if ((enableMemory || web) && m.role == "assistant" && m.reasoning.isNotBlank()) {
                 o.put("reasoning_content", m.reasoning)
+            }
+            if (web && m.role == "assistant" && m.serverToolCalls.isNotBlank()) {
+                runCatching { o.put("server_tool_calls", JSONArray(m.serverToolCalls)) }
             }
             messages.put(o)
         }
@@ -140,7 +146,12 @@ class ChatRepository(
                 put("temperature", settings.temperature.toDouble())
                 put("top_p", settings.topP.toDouble())
             }
-            if (enableMemory) {
+            val declared = WebTools.toolTypes(web, enableMemory)
+            if (web) {
+                put("tools", JSONArray().apply {
+                    declared.forEach { put(JSONObject().put("type", it)) }
+                })
+            } else if (enableMemory) {
                 put("tools", JSONArray().put(MEMORY_TOOL_SCHEMA))
                 put("tool_choice", "auto")
             }
@@ -175,7 +186,7 @@ class ChatRepository(
                         if (ev.content.isNotEmpty()) acc.content.append(ev.content)
                         if (ev.reasoning.isNotEmpty()) acc.reasoning.append(ev.reasoning)
                         ev.usage?.let { acc.usage = it }
-                        acc.takeTools(ev.raw)
+                        acc.absorb(ev.raw)
                         onPartial.invoke(acc.content.toString(), acc.reasoning.toString())
                     }
                 }
@@ -187,6 +198,8 @@ class ChatRepository(
                 put("content", acc.content.toString())
                 put("reasoning_content", acc.reasoning.toString())
                 if (acc.tools.length() > 0) put("tool_calls", acc.tools)
+                if (acc.serverTools.isNotBlank()) put("server_tool_calls", JSONArray(acc.serverTools))
+                if (acc.annotations.isNotBlank()) put("annotations", JSONArray(acc.annotations))
             }
             usage = acc.usage ?: TokenUsage()
             onPartial.invoke(acc.content.toString(), acc.reasoning.toString())
@@ -244,13 +257,13 @@ class ChatRepository(
                 val msg2 = choice2.optJSONObject("message") ?: JSONObject()
                 val usage2 = UsageJson.parse(root2.optJSONObject("usage"))
                 val cost2 = cost + Pricing.cost(model, now, usage2.cacheHit.toLong(), usage2.cacheMiss.toLong(), usage2.completionTokens.toLong())
-                onPartial?.invoke(msg2.optString("content"), msg2.optString("reasoning_content"))
-                val finalText = msg2.optString("content").ifBlank {
+                onPartial?.invoke(JsonText.of(msg2, "content"), JsonText.of(msg2, "reasoning_content"))
+                val finalText = JsonText.of(msg2, "content").ifBlank {
                     if (ops.isNotEmpty()) "✓ 已${if (ops.any { it.action == "delete" }) "删除" else "保存"} ${ops.size} 条记忆" else ""
                 }
                 return ChatResult.Success(
                     content = finalText,
-                    reasoning = msg2.optString("reasoning_content").ifBlank { msg.optString("reasoning_content") },
+                    reasoning = JsonText.of(msg2, "reasoning_content").ifBlank { JsonText.of(msg, "reasoning_content") },
                     usage = TokenUsage(
                         promptTokens = usage.promptTokens + usage2.promptTokens,
                         cacheHit = usage.cacheHit + usage2.cacheHit,
@@ -262,16 +275,20 @@ class ChatRepository(
                     cost = cost2,
                     memoryOps = ops,
                     model = model,
+                    serverToolCalls = serverToolsOf(msg2).ifBlank { serverToolsOf(msg) },
+                    citations = citationsOf(msg2).ifBlank { citationsOf(msg) },
                 )
             }
         }
 
         return ChatResult.Success(
-            content = msg.optString("content"),
-            reasoning = msg.optString("reasoning_content"),
+            content = JsonText.of(msg, "content"),
+            reasoning = JsonText.of(msg, "reasoning_content"),
             usage = usage,
             cost = cost,
             model = model,
+            serverToolCalls = serverToolsOf(msg),
+            citations = citationsOf(msg),
         )
     }
 
@@ -326,6 +343,24 @@ class ChatRepository(
         } catch (e: Exception) {
             "error: ${e.message}"
         }
+    }
+
+    private fun serverToolsOf(msg: JSONObject): String {
+        val a = msg.optJSONArray("server_tool_calls") ?: return ""
+        return if (a.length() == 0) "" else a.toString()
+    }
+
+    private fun citationsOf(msg: JSONObject): String {
+        val a = msg.optJSONArray("annotations") ?: return ""
+        val lines = LinkedHashSet<String>()
+        for (i in 0 until a.length()) {
+            val c = a.optJSONObject(i)?.optJSONObject("url_citation") ?: continue
+            val url = c.optString("url")
+            if (url.isBlank()) continue
+            val title = c.optString("title").ifBlank { url }
+            lines += if (title == url) url else "$title\n$url"
+        }
+        return lines.joinToString("\n")
     }
 
     private fun parseError(code: Int, text: String): String {
@@ -407,6 +442,20 @@ private class StreamAccum {
     val reasoning = StringBuilder()
     var usage: TokenUsage? = null
     val tools = JSONArray()
+    var serverTools: String = ""
+    var annotations: String = ""
+
+    fun absorb(root: JSONObject?) {
+        takeTools(root)
+        val choice = root?.optJSONArray("choices")?.optJSONObject(0) ?: return
+        val delta = choice.optJSONObject("delta")
+        val stc = delta?.optJSONArray("server_tool_calls")
+            ?: choice.optJSONObject("message")?.optJSONArray("server_tool_calls")
+        if (stc != null && stc.length() > 0) serverTools = stc.toString()
+        val ann = delta?.optJSONArray("annotations")
+            ?: choice.optJSONObject("message")?.optJSONArray("annotations")
+        if (ann != null && ann.length() > 0) annotations = ann.toString()
+    }
 
     fun takeTools(root: JSONObject?) {
         val delta = root?.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: return

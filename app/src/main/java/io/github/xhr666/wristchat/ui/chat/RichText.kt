@@ -6,6 +6,7 @@ import android.text.method.LinkMovementMethod
 import android.text.style.ImageSpan
 import android.util.LruCache
 import android.widget.TextView
+import io.github.xhr666.wristchat.data.FormulaText
 import io.github.xhr666.wristchat.data.StreamRender
 import io.noties.markwon.Markwon
 import ru.noties.jlatexmath.JLatexMathAndroid
@@ -17,41 +18,58 @@ import ru.noties.jlatexmath.JLatexMathDrawable
  */
 object RichText {
     private val math = Regex(
-        """\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?<!\$)\$(?!\$)[^\$\n]+?\$(?!\$)"""
+        """\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}|\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?<!\$)\$(?!\$)[^\$\n]+?\$(?!\$)"""
     )
     private val images = LruCache<String, JLatexMathDrawable>(24)
     @Volatile private var inited = false
 
     fun bind(tv: TextView, markwon: Markwon, source: String, color: Int) {
         val parts = StreamRender.split(source)
-        if (parts.ready.isEmpty()) {
-            tv.text = parts.pending
-            tv.setTextColor(color)
-            return
-        }
-        val formulas = ArrayList<String>()
-        val withHoles = math.replace(parts.ready) { m ->
-            val i = formulas.size
-            formulas += unwrap(m.value)
-            "§M${i}§"
-        }
-        val spanned = SpannableStringBuilder(markwon.toMarkdown(withHoles))
-        for (i in formulas.indices) {
-            val token = "§M${i}§"
-            val at = spanned.indexOf(token)
-            if (at < 0) continue
-            val drawable = formula(tv, formulas[i], color) ?: continue
-            spanned.replace(at, at + token.length, "\uFFFC")
-            val align = if (Build.VERSION.SDK_INT >= 29) ImageSpan.ALIGN_CENTER else ImageSpan.ALIGN_BASELINE
-            spanned.setSpan(ImageSpan(drawable, align), at, at + 1, 33)
+        val spanned = SpannableStringBuilder()
+        for (seg in segments(parts.ready)) {
+            when (seg) {
+                is Seg.Md -> if (seg.text.isNotEmpty()) spanned.append(markwon.toMarkdown(seg.text))
+                is Seg.Math -> appendFormula(tv, spanned, seg.body, color)
+            }
         }
         if (parts.pending.isNotEmpty()) {
             if (spanned.isNotEmpty() && spanned.last() != '\n') spanned.append('\n')
             spanned.append(parts.pending)
         }
         tv.setTextColor(color)
-        tv.text = spanned
+        tv.text = if (spanned.isEmpty()) source else spanned
         tv.movementMethod = LinkMovementMethod.getInstance()
+    }
+
+    private fun appendFormula(tv: TextView, out: SpannableStringBuilder, body: String, color: Int) {
+        val drawable = if (FormulaText.unsupported(body)) null else formula(tv, body, color)
+        if (drawable == null) {
+            if (out.isNotEmpty() && out.last() != '\n') out.append('\n')
+            out.append(FormulaText.fallback(body))
+            return
+        }
+        val at = out.length
+        out.append('\uFFFC')
+        val align = if (Build.VERSION.SDK_INT >= 29) ImageSpan.ALIGN_CENTER else ImageSpan.ALIGN_BASELINE
+        out.setSpan(ImageSpan(drawable, align), at, at + 1, 33)
+    }
+
+    private sealed class Seg {
+        data class Md(val text: String) : Seg()
+        data class Math(val body: String) : Seg()
+    }
+
+    private fun segments(src: String): List<Seg> {
+        if (src.isEmpty()) return emptyList()
+        val out = ArrayList<Seg>()
+        var i = 0
+        for (m in math.findAll(src)) {
+            if (m.range.first > i) out += Seg.Md(src.substring(i, m.range.first))
+            out += Seg.Math(unwrap(m.value))
+            i = m.range.last + 1
+        }
+        if (i < src.length) out += Seg.Md(src.substring(i))
+        return out
     }
 
     private fun unwrap(raw: String): String = when {

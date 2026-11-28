@@ -49,7 +49,7 @@ fun BalanceScreen(settings: SettingsStore) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 4.dp, end = 4.dp, top = 8.dp, bottom = LocalRoundBottom.current),
+            contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 8.dp, bottom = LocalListBottomPad.current),
         ) {
             item {
                 Text(ui?.peakLabel ?: "", color = c.text, fontSize = 12.sp, lineHeight = 16.sp,

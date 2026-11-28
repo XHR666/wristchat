@@ -22,8 +22,8 @@ object SseEvents {
         val delta = choice?.optJSONObject("delta") ?: choice?.optJSONObject("message")
         val usage = root.optJSONObject("usage")?.let { UsageJson.parse(it) }
         return Delta(
-            content = delta?.optString("content", "") ?: "",
-            reasoning = delta?.optString("reasoning_content", "") ?: "",
+            content = JsonText.of(delta, "content"),
+            reasoning = JsonText.of(delta, "reasoning_content"),
             usage = usage,
             raw = root,
         )

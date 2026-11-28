@@ -67,7 +67,8 @@ class MainActivity : ComponentActivity() {
                 val v = if (kotlin.math.abs(axis) > 0.001f) axis else -mapped.getAxisValue(MotionEvent.AXIS_VSCROLL)
                 if (kotlin.math.abs(v) > 0.001f) {
                     val factor = android.view.ViewConfiguration.get(this).scaledVerticalScrollFactor
-                    RotaryBus.emit((v * factor).toInt())
+                    // 向下转表冠 = 内容向下走。覆盖层只换轴、不取反,这里补上方向。
+                    RotaryBus.emit((-v * factor).toInt())
                     return true
                 }
             }

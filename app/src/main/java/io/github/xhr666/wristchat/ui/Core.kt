@@ -44,7 +44,6 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
-import io.github.xhr666.wristchat.ui.common.RoundInsets
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -166,17 +165,14 @@ fun ScreenScaffold(
     val c = LocalWrist.current
     BoxWithConstraints(Modifier.fillMaxSize().background(c.bg)) {
         val w = maxWidth; val h = maxHeight
-        val dia = kotlin.math.min(w.value, h.value)
-        // 圆屏页边跟 heybox Lite:顶 12%、底 8%,左右按顶边那条弦收进圆里。
-        // 不用贴底的整段弦宽(大约 90dp),那会把列表底下留出一大块空白。
-        val topPad = RoundInsets.topPad(dia).dp
-        val bottomSafe = RoundInsets.bottomPad(dia).dp
-        val side = RoundInsets.chordInset(w.value, h.value, topPad.value).dp
+        val bottomSafe = (roundInset(w, h, h - 4.dp) + 12.dp).coerceAtMost(26.dp)
         val showClock = showTimeAlways || showTimeAtTop
+        val topPad = if (showClock) 30.dp else 12.dp
         val itemHalf = 36.dp
         val listTop = topPad + 40.dp
         val listCenterPad = ((h / 2) - listTop - itemHalf).coerceAtLeast(0.dp)
-        val listBottomPad = 6.dp
+        // 末项要能滚到屏幕中线附近,否则贴底的那一项永远放大不了
+        val listBottomPad = (h / 2 - itemHalf).coerceAtLeast(72.dp)
         CompositionLocalProvider(
             LocalRoundBottom provides bottomSafe,
             LocalListCenterPad provides listCenterPad,
@@ -184,8 +180,9 @@ fun ScreenScaffold(
         ) {
         Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(top = topPad)) {
+            val inset = roundInset(w, h, 12.dp + 20.dp)
             var swipeAcc by remember { mutableStateOf(0f) }
-            var rowMod = Modifier.fillMaxWidth().height(40.dp).padding(horizontal = side)
+            var rowMod = Modifier.fillMaxWidth().height(40.dp).padding(start = inset + 6.dp, end = inset + 6.dp)
             if (onHeaderSwipeBack != null) {
                 // key 固定 Unit + rememberUpdatedState:onBack 换新实例不再重启手势检测
                 val currentBack by rememberUpdatedState(onHeaderSwipeBack)
@@ -203,15 +200,13 @@ fun ScreenScaffold(
                     maxLines = 1, modifier = Modifier.weight(1f))
                 actions()
             }
-            Box(Modifier.weight(1f).padding(horizontal = side)) { content() }
+            content()
         }
         // 顶部弧形时间(官方 CurvedText:文字沿圆表上沿弧线排布)
         if (showClock) CurvedClock()
         // 右侧小巧滚动进度条(仿 wear PositionIndicator,滚动时出现)
         // Wear 官方 PositionIndicator(参考应用同款):短弧、自动淡入淡出、随滚动移动
-        scrollIndicator?.let { st ->
-            androidx.wear.compose.material.PositionIndicator(st, modifier = androidx.compose.ui.Modifier.fillMaxSize())
-        }
+        scrollIndicator?.let { st -> SmallScrollIndicator(st) }
         }
         }
     }

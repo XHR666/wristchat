@@ -99,6 +99,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_THINKING, true)
         set(v) = prefs.edit().putBoolean(KEY_THINKING, v).apply()
 
+    /** 联网搜索 + 阅读消息里的链接。和记忆函数工具不能同时声明。 */
+    var webTools: Boolean
+        get() = prefs.getBoolean(KEY_WEB_TOOLS, true)
+        set(v) = prefs.edit().putBoolean(KEY_WEB_TOOLS, v).apply()
+
     /** 文字对齐:left / center / right */
     var textAlignMode: String
         get() = prefs.getString(KEY_TEXT_ALIGN, "left") ?: "left"
@@ -336,6 +341,7 @@ Requirements:
 </conversation>
 """.trimIndent()
         private const val KEY_THINKING = "thinking"
+        private const val KEY_WEB_TOOLS = "web_tools"
         private const val KEY_TEXT_ALIGN = "text_align"
         private const val KEY_TEXT_RTL = "text_rtl"
         private const val KEY_MSG_SWAP = "message_swap"

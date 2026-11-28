@@ -20,6 +20,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import io.github.xhr666.wristchat.data.ThinkLabel
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,6 +61,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
     val c = LocalWrist.current
 
     val frame by vm.frame.observeAsState(0)
+    val streamingTs by vm.streamingTs.observeAsState(0L)
+    val thinkStart by vm.thinkStartMs.observeAsState(0L)
     val messages = session?.messages ?: emptyList()
     val draft by vm.draft.observeAsState("")
     // Markwon 全屏共享一份,避免每条消息各自初始化插件链(内存/耗时)
@@ -94,7 +101,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             SmallAction("⟳") { newSessionAsk = true }
         },
     ) {
-        Column(Modifier.fillMaxSize().padding(bottom = LocalRoundBottom.current)) {
+        Column(Modifier.fillMaxSize().padding(bottom = 10.dp)) {
             if (quickPanel) {
                 Column(
                     Modifier
@@ -120,16 +127,20 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                 state = listState,
                 reverseLayout = true,
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 8.dp),
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = LocalRoundBottom.current),
             ) {
                 itemsIndexed(messages.asReversed(), key = { _, m -> "${m.role}-${m.ts}" }) { _, m ->
-                    MessageItem(m, markwon, settings)
+                    MessageItem(
+                        m, markwon, settings,
+                        streaming = m.ts == streamingTs && streamingTs != 0L,
+                        thinkStartMs = thinkStart,
+                    )
                 }
             }
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp)
+                    .padding(horizontal = 30.dp)
                     .background(c.surface)
                     .border(1.dp, c.border)
                     .clickable { fullscreenInput = true }
@@ -170,13 +181,15 @@ private fun detailsText(d: io.github.xhr666.wristchat.ui.chat.ConvDetails): Stri
 
 /** 消息气泡 */
 @Composable
-fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon, settings: SettingsStore) {
+fun MessageItem(
+    m: io.github.xhr666.wristchat.data.ChatMessage,
+    markwon: Markwon,
+    settings: SettingsStore,
+    streaming: Boolean = false,
+    thinkStartMs: Long = 0L,
+) {
     val c = LocalWrist.current
     val isUser = m.role == "user"
-    val thinkScroll = androidx.compose.foundation.rememberScrollState()
-    LaunchedEffect(m.reasoning) {
-        if (m.reasoning.isNotEmpty()) thinkScroll.scrollTo(thinkScroll.maxValue)
-    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -185,18 +198,7 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
         horizontalAlignment = if (isUser != settings.messageSwap) Alignment.End else Alignment.Start,
     ) {
         if (!isUser && m.reasoning.isNotBlank()) {
-            Text("思考", color = c.hint, fontSize = 10.sp, modifier = Modifier.padding(bottom = 2.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(c.surface)
-                    .verticalScroll(thinkScroll)
-                    .padding(8.dp),
-            ) {
-                Text(m.reasoning, color = c.hint, fontSize = 12.sp, lineHeight = 16.sp)
-            }
+            ThinkBlock(m, streaming, thinkStartMs)
         }
         Box(
             Modifier
@@ -236,6 +238,83 @@ fun MessageItem(m: io.github.xhr666.wristchat.data.ChatMessage, markwon: Markwon
                         }
                         .padding(horizontal = 4.dp, vertical = 2.dp))
             }
+            if (m.citations.isNotBlank()) {
+                Text(m.citations, color = c.hint, fontSize = 9.sp, lineHeight = 12.sp,
+                    modifier = Modifier.padding(top = 2.dp).widthIn(max = 200.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThinkBlock(
+    m: io.github.xhr666.wristchat.data.ChatMessage,
+    streaming: Boolean,
+    thinkStartMs: Long,
+) {
+    val c = LocalWrist.current
+    var open by remember(m.ts) { mutableStateOf(false) }
+    var wide by remember(m.ts) { mutableStateOf(false) }
+    var follow by remember(m.ts) { mutableStateOf(true) }
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(streaming) {
+        while (streaming) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(500)
+        }
+    }
+    val seconds = if (streaming && thinkStartMs > 0L) {
+        ((now - thinkStartMs).coerceAtLeast(0L)) / 1000L
+    } else m.reasoningMs / 1000L
+    val gate = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && scroll.value < scroll.maxValue - 8) follow = false
+                return Offset.Zero
+            }
+        }
+    }
+    LaunchedEffect(scroll) {
+        androidx.compose.runtime.snapshotFlow { scroll.value to scroll.maxValue }.collect { (v, max) ->
+            if (!follow && max > 0 && v >= max - 4) follow = true
+        }
+    }
+    LaunchedEffect(m.reasoning, follow, streaming, wide) {
+        if (streaming && follow) scroll.scrollTo(scroll.maxValue)
+    }
+    Column(Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (streaming) ThinkLabel.streaming(seconds) else ThinkLabel.done(seconds),
+                color = c.hint, fontSize = 11.sp, modifier = Modifier.weight(1f, fill = false),
+            )
+            Text(
+                if (streaming) "↕" else if (open) "▾" else "▸",
+                color = c.accent, fontSize = 14.sp,
+                modifier = Modifier
+                    .clickable {
+                        if (streaming) {
+                            wide = !wide
+                            if (wide) follow = true
+                        } else open = !open
+                    }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        if (streaming || open) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .then(if (streaming) Modifier.height(if (wide) 200.dp else 72.dp) else Modifier.heightIn(max = 160.dp))
+                    .nestedScroll(gate)
+                    .verticalScroll(scroll),
+            ) {
+                Text(m.reasoning, color = c.hint, fontSize = 12.sp, lineHeight = 16.sp,
+                    modifier = Modifier.padding(vertical = 4.dp))
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
         }
     }
 }
@@ -382,6 +461,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
     val topPad = 32.dp
     val barH = 46.dp
     val barInset = roundInset(w, h, topPad + barH / 2)
+    val editorInset = maxOf(roundInset(w, h, topPad + barH + 18.dp), 16.dp)
     Column(
         Modifier
             .fillMaxSize()
@@ -445,7 +525,7 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
         }
         hint?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 11.sp, maxLines = 1) }
         AndroidView(
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = editorInset + 8.dp),
             factory = { cx ->
                 android.widget.EditText(cx).apply {
                     layoutParams = android.view.ViewGroup.LayoutParams(
@@ -465,7 +545,8 @@ fun FullscreenInputOverlay(vm: ChatViewModel, onClose: () -> Unit) {
                     hint = "在此输入…"
                     gravity = android.view.Gravity.TOP or android.view.Gravity.START
                     background = null
-                    setPadding(8, 4, 8, 4)
+                    val d = cx.resources.displayMetrics.density
+                    setPadding((18 * d).toInt(), (10 * d).toInt(), (18 * d).toInt(), (8 * d).toInt())
                     addTextChangedListener(object : android.text.TextWatcher {
                         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}
                         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, d: Int) {}

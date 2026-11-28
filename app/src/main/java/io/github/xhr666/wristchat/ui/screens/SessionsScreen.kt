@@ -49,11 +49,11 @@ fun SessionsScreen(settings: SettingsStore, vm: ChatViewModel, onOpenChat: () ->
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 2.dp)
+                    .padding(horizontal = 20.dp)
                     ,
                 contentPadding = PaddingValues(
                     top = LocalListCenterPad.current,
-                    bottom = LocalListBottomPad.current + LocalRoundBottom.current),
+                    bottom = LocalListBottomPad.current),
             ) {
                 itemsIndexed(sessions) { _, s ->
                     WCard(

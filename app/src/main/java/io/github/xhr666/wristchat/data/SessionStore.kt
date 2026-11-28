@@ -12,6 +12,9 @@ data class ChatMessage(
     val content: String,
     val imgs: List<String> = emptyList(),   // 图片附件文件名(filesDir/attachments/),仅 user 消息,可多张
     val reasoning: String = "",
+    val reasoningMs: Long = 0,
+    val serverToolCalls: String = "",
+    val citations: String = "",
     val ts: Long = System.currentTimeMillis(),
     val usage: TokenUsage? = null,
     val cost: Double = 0.0,
@@ -142,6 +145,9 @@ class SessionStore(private val context: Context) {
                     imgs = m.optJSONArray("imgs")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf { s2 -> s2.isNotBlank() } } }
                         ?: listOfNotNull(m.optString("img").takeIf { it.isNotBlank() }),
                     reasoning = m.optString("reasoning"),
+                    reasoningMs = m.optLong("reasoningMs"),
+                    serverToolCalls = m.optString("serverToolCalls"),
+                    citations = m.optString("citations"),
                     ts = m.optLong("ts"),
                     usage = m.optJSONObject("usage")?.let { u ->
                         TokenUsage(
@@ -205,6 +211,9 @@ class SessionStore(private val context: Context) {
                         put("img", m.imgs.first())   // 兼容旧版本
                     }
                     put("reasoning", m.reasoning)
+                    if (m.reasoningMs > 0) put("reasoningMs", m.reasoningMs)
+                    if (m.serverToolCalls.isNotBlank()) put("serverToolCalls", m.serverToolCalls)
+                    if (m.citations.isNotBlank()) put("citations", m.citations)
                     put("ts", m.ts)
                     m.usage?.let { u ->
                         put("usage", JSONObject().apply {

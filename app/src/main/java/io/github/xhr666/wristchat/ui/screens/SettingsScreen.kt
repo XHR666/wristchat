@@ -43,10 +43,10 @@ private val CATS = listOf(
     Cat("skills_memory", "技能与记忆", "Skills / 记忆"),
     Cat("sessions", "会话与导入", "导入 / 管理"),
     Cat("storage", "存储与缓存", "清理 / 占用"),
-    Cat("update", "更新与同步", "检查更新 / 手机同步"),
+    Cat("update", "版本与更新", "当前版本 / 检查更新 / 同步"),
     Cat("prefs", "偏好设置", "界面偏好 / 主题"),
     Cat("security", "安全", "启动密码 / 免密次数"),
-    Cat("about", "关于", "版本 / 许可 / 日志"),
+    Cat("about", "关于", "许可 / 日志"),
 )
 private val CAT_TITLE = CATS.associate { it.key to it.title } +
     mapOf("mp_models" to "默认模型", "mp_prompts" to "提示词",
@@ -80,9 +80,9 @@ fun SettingsMenuScreen(settings: SettingsStore) {
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     // 圆表:首项居中 + 末项也能滚到中间(官方 ScalingLazyColumn 的居中语义)
                     contentPadding = PaddingValues(
-                        start = 4.dp, end = 4.dp,
+                        start = 18.dp, end = 18.dp,
                         top = LocalListCenterPad.current,
-                        bottom = LocalListBottomPad.current + 8.dp),
+                        bottom = LocalListBottomPad.current),
                 ) {
                     itemsIndexed(CATS) { _, cat ->
                         WCard(cat.title, cat.desc) { openCat = cat.key }
@@ -119,9 +119,9 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                 scrollIndicator = if (!syncOpen && logPage == null) listState else null) {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = 4.dp, end = 4.dp,
+                        start = 18.dp, end = 18.dp,
                         top = LocalListCenterPad.current,
-                        bottom = LocalListBottomPad.current + 8.dp)) {
+                        bottom = LocalListBottomPad.current)) {
                     settings.rev   // 依赖 rev:设置改完立即重建列表内容
                     when (cat) {
                         "service" -> serviceRows(settings, dialogs)
@@ -282,6 +282,7 @@ private fun LazyListScope.modelRows(s: SettingsStore, d: DialogController) {
     item { WCard("系统提示词(应用级)", if (s.systemPrompt.isBlank()) "未设置" else "已设置") {
         d.input("系统提示词", s.systemPrompt, ml = true) { s.systemPrompt = it } } }
     item { WToggle("思考模式(深度思考)", s.thinkingEnabled) { s.thinkingEnabled = it } }
+    item { WToggle("联网搜索与阅读链接", s.webTools) { s.webTools = it } }
     item { WCard("思考强度", s.reasoningEffort) { val o = listOf("low", "high", "max")
         d.choice("思考强度", o, o.indexOf(s.reasoningEffort).coerceAtLeast(0)) { i -> s.reasoningEffort = o[i] } } }
     item { WCard("温度", s.temperature.toString() + "\n(高级参数:不要修改,除非你知道自己在干什么)") { d.num("温度(0-2)", s.temperature, 0f, 2f) { s.temperature = it } } }
@@ -487,7 +488,7 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
             }
         }
 
-        WCard("检查更新", "") {
+        WCard("版本 ${s.versionName}", "检查更新") {
             val repo = UpdateRepository(s)
             io.github.xhr666.wristchat.data.AppLog.i("upd", "check start v=${s.versionName}")
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -592,7 +593,6 @@ private fun LazyListScope.securityRows(s: SettingsStore, d: DialogController) {
 }
 
 private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController, openLog: (String) -> Unit) {
-    item { WCard("版本", s.versionName) }
     item { WCard("开源许可", "MIT + 第三方库") { d.text("开源许可", licenseText()) } }
     item {
         WCard("会话文件自检", "磁盘上有哪些会话、是否能解析") { openLog("sess") }

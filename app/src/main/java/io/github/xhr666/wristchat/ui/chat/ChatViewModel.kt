@@ -65,6 +65,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _frame = MutableLiveData(0)
     val frame: LiveData<Int> = _frame
 
+    /** 正在流式输出的那条助手消息;0 表示没有。 */
+    private val _streamingTs = MutableLiveData(0L)
+    val streamingTs: LiveData<Long> = _streamingTs
+
+    /** 这条思考开始的时间,供界面每秒刷新用时。 */
+    private val _thinkStart = MutableLiveData(0L)
+    val thinkStartMs: LiveData<Long> = _thinkStart
+    private var thinkStart = 0L
+
     private val _sessions = MutableLiveData<List<SessionStore.SessionBrief>>(emptyList())
     val sessions: LiveData<List<SessionStore.SessionBrief>> = _sessions
 
@@ -300,6 +309,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         clearDraft()   // 纯图片消息也要清掉草稿文件,否则下次启动会把旧文本恢复出来
         refreshSessions()   // 立刻让左侧列表包含这个会话
         _sending.value = true
+        thinkStart = 0L
+        _thinkStart.value = 0L
+        _streamingTs.value = aiTs
 
         viewModelScope.launch {
             // 上下文压缩检查
@@ -308,7 +320,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val history = s.messages.filter { it.role != "system" && it !== userMsg && it.ts != aiTs }
             val updates = Channel<Pair<String, String>>(Channel.CONFLATED)
             val paint = launch(kotlinx.coroutines.Dispatchers.Main) {
-                for ((c, r) in updates) replaceAssistant(s, aiTs, c, r, null, 0.0)
+                for ((c, r) in updates) {
+                    if (r.isNotEmpty() && thinkStart == 0L) {
+                        thinkStart = System.currentTimeMillis()
+                        _thinkStart.value = thinkStart
+                    }
+                    replaceAssistant(s, aiTs, c, r, null, 0.0)
+                }
             }
             val result = repo.chat(history, trimmed, imageFiles = imageFiles,
                 enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK,
@@ -318,7 +336,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             paint.join()
             when (result) {
                 is ChatResult.Success -> {
-                    replaceAssistant(s, aiTs, result.content, result.reasoning, result.usage, result.cost)
+                    val elapsed = if (thinkStart == 0L) 0L else System.currentTimeMillis() - thinkStart
+                    replaceAssistant(s, aiTs, result.content, result.reasoning, result.usage, result.cost,
+                        reasoningMs = elapsed, serverTools = result.serverToolCalls, citations = result.citations)
                     sessionStore.reconcile(s)
                     sessionStore.save(s)
                     bump()
@@ -340,6 +360,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             _sending.value = false
+            _streamingTs.value = 0L
+            _thinkStart.value = 0L
+            thinkStart = 0L
             refreshDetails()
         }
         return true
@@ -352,10 +375,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun replaceAssistant(
         s: Session, ts: Long, content: String, reasoning: String,
         usage: TokenUsage?, cost: Double,
+        reasoningMs: Long = 0, serverTools: String = "", citations: String = "",
     ) {
         val i = s.messages.indexOfLast { it.ts == ts && it.role == "assistant" }
+        val prev = if (i >= 0) s.messages[i] else null
         val msg = ChatMessage(
             role = "assistant", content = content, reasoning = reasoning,
+            reasoningMs = if (reasoningMs > 0) reasoningMs else prev?.reasoningMs ?: 0,
+            serverToolCalls = serverTools.ifBlank { prev?.serverToolCalls.orEmpty() },
+            citations = citations.ifBlank { prev?.citations.orEmpty() },
             ts = ts, usage = usage, cost = cost,
         )
         if (i >= 0) s.messages[i] = msg else s.messages.add(msg)
