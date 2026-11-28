@@ -88,6 +88,24 @@ fun queryName(ctx: Context, uri: Uri): String? = runCatching {
 
 fun licenseText(): String = LICENSE_TEXT
 
+fun exportText(ctx: Context, name: String, text: String): String {
+    return try {
+        val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val stamp = java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date())
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "$stamp-$name")
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json")
+            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/WristChat/$day")
+        }
+        val uri = ctx.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: return "导出失败"
+        ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+        "已导出到 Download/WristChat/$day/"
+    } catch (e: Exception) {
+        "导出失败"
+    }
+}
+
 /**
  * 导出三个日志到公共 Download/WristChat/<当天日期>/<时间>-*.log
  * 上限 50 个文件:超出后删除最久的一个
@@ -152,22 +170,18 @@ private fun trimOldExports(ctx: Context, keep: Int): Int {
 /** 会话自检:磁盘上到底有哪些会话文件、能不能解析(排查"会话不显示") */
 fun sessionSelfCheck(ctx: Context): String {
     val dir = java.io.File(ctx.filesDir, "sessions")
-    val sb = StringBuilder()
-    sb.append("目录: ").append(dir.absolutePath).append('\n')
-    sb.append("存在: ").append(dir.exists()).append('\n')
     val files = dir.listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
+    val sb = StringBuilder()
     sb.append("文件数: ").append(files.size).append("\n\n")
     var ok = 0
     files.take(30).forEach { f ->
         val parsed = try {
             val o = org.json.JSONObject(f.readText())
-            val id = o.optString("id")
-            val title = o.optString("title")
             val n = org.json.JSONArray(o.optString("messages", "[]")).length()
             ok++
-            "OK  id=$id  title=$title  msgs=$n"
+            "OK msgs=$n"
         } catch (e: Exception) {
-            "BAD ${e.message}"
+            "BAD ${e.javaClass.simpleName}"
         }
         sb.append(f.name).append("  ").append(f.length()).append("B  ").append(parsed).append('\n')
     }

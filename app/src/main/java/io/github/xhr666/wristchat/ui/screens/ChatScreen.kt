@@ -132,7 +132,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
             ) {
                 itemsIndexed(messages.asReversed(), key = { _, m -> "${m.role}-${m.ts}" }) { _, m ->
                     MessageItem(
-                        m, markwon, settings,
+                        m, markwon, settings, listState,
                         streaming = m.ts == streamingTs && streamingTs != 0L,
                         thinkStartMs = thinkStart,
                     )
@@ -186,6 +186,7 @@ fun MessageItem(
     m: io.github.xhr666.wristchat.data.ChatMessage,
     markwon: Markwon,
     settings: SettingsStore,
+    listState: androidx.compose.foundation.lazy.LazyListState,
     streaming: Boolean = false,
     thinkStartMs: Long = 0L,
 ) {
@@ -199,7 +200,11 @@ fun MessageItem(
         horizontalAlignment = if (isUser != settings.messageSwap) Alignment.End else Alignment.Start,
     ) {
         if (!isUser && m.reasoning.isNotBlank()) {
-            ThinkBlock(m, streaming, thinkStartMs)
+            ThinkBlock(m, streaming, thinkStartMs, listState)
+        }
+        if (!isUser && m.toolNote.isNotBlank()) {
+            Text(m.toolNote, color = c.hint, fontSize = 11.sp, lineHeight = 14.sp,
+                modifier = Modifier.padding(bottom = 2.dp).widthIn(max = 200.dp))
         }
         Box(
             Modifier
@@ -252,6 +257,7 @@ private fun ThinkBlock(
     m: io.github.xhr666.wristchat.data.ChatMessage,
     streaming: Boolean,
     thinkStartMs: Long,
+    listState: androidx.compose.foundation.lazy.LazyListState,
 ) {
     val c = LocalWrist.current
     var open by remember(m.ts) { mutableStateOf(false) }
@@ -268,11 +274,12 @@ private fun ThinkBlock(
     val seconds = if (streaming && thinkStartMs > 0L) {
         ((now - thinkStartMs).coerceAtLeast(0L)) / 1000L
     } else m.reasoningMs / 1000L
+    val scope = rememberCoroutineScope()
     val gate = remember {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.UserInput && scroll.value < scroll.maxValue - 8) follow = false
-                return Offset.Zero
+                return available
             }
         }
     }
@@ -298,7 +305,18 @@ private fun ThinkBlock(
                         if (streaming) {
                             wide = !wide
                             if (wide) follow = true
-                        } else open = !open
+                        } else {
+                            val index = listState.firstVisibleItemIndex
+                            val offset = listState.firstVisibleItemScrollOffset
+                            open = !open
+                            scope.launch {
+                                androidx.compose.runtime.withFrameNanos { }
+                                androidx.compose.runtime.withFrameNanos { }
+                                val size = listState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.index == index }?.size ?: 0
+                                listState.scrollToItem(index, ScrollAnchor.clamp(offset, size))
+                            }
+                        }
                     }
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
@@ -355,6 +373,7 @@ fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: Settin
             TextView(ctx2).apply {
                 setTextColor(color)
                 textSize = 14f
+                setHorizontallyScrolling(!settings.codeWrap)
                 textAlignment = when (settings.textAlignMode) {
                     "center" -> android.view.View.TEXT_ALIGNMENT_CENTER
                     "right" -> android.view.View.TEXT_ALIGNMENT_VIEW_END
@@ -366,7 +385,10 @@ fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: Settin
                 }
             }
         },
-        update = { tv -> RichText.bind(tv, markwon, shown, color) },
+        update = { tv ->
+            tv.setHorizontallyScrolling(!settings.codeWrap)
+            RichText.bind(tv, markwon, shown, color)
+        },
     )
 }
 

@@ -364,17 +364,17 @@ fun SwipeBack(onBack: () -> Unit, content: @Composable () -> Unit) {
 fun WCard(title: String, value: String = "", modifier: Modifier = Modifier,
           onLongClick: (() -> Unit)? = null, onClick: (() -> Unit)? = null) {
     val c = LocalWrist.current
+    val shape = RoundedCornerShape(16.dp)
     var m = modifier
         .centerFocus()
         .fillMaxWidth()
         .padding(vertical = 4.dp)
-        .clip(RoundedCornerShape(16.dp))
+        .clip(shape)
         .background(c.surface)
-        .border(1.dp, c.border, RoundedCornerShape(16.dp))
-        .padding(horizontal = 17.dp, vertical = 16.dp)
+        .border(1.dp, c.border, shape)
     m = if (onLongClick != null) m.combinedClickable(onClick = onClick ?: {}, onLongClick = onLongClick)
     else if (onClick != null) m.clickable { onClick() } else m
-    Column(m) {
+    Column(m.padding(horizontal = 17.dp, vertical = 16.dp)) {
         Text(title, color = c.text, fontSize = 16.sp)
         if (value.isNotEmpty()) Text(value, color = c.hint, fontSize = 12.5.sp, lineHeight = 16.sp,
             modifier = Modifier.padding(top = 3.dp))
@@ -469,24 +469,24 @@ fun WToggle(title: String, checked: Boolean, modifier: Modifier = Modifier, onCh
             .clip(RoundedCornerShape(14.dp))
             .background(c.surface)
             .border(1.dp, c.border, RoundedCornerShape(14.dp))
+            .clickable { onChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, color = c.text, fontSize = 14.5.sp, modifier = Modifier.weight(1f))
-        SmallToggle(checked, onChange = onChange)
+        SmallToggle(checked)
     }
 }
 
-/** 小号胶囊开关 */
+/** 小号胶囊开关。点击由外层整行接收，避免只有中间一小块变色。 */
 @Composable
-fun SmallToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
+fun SmallToggle(checked: Boolean) {
     val c = LocalWrist.current
     Box(
         Modifier
             .width(26.dp).height(15.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (checked) c.accent else c.hint.copy(alpha = 0.4f))
-            .clickable { onChange(!checked) }
             .padding(2.dp),
         contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
     ) {

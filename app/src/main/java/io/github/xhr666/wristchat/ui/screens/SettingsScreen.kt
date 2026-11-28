@@ -34,23 +34,11 @@ import io.github.xhr666.wristchat.ui.settings.SettingsViewModelFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-private data class Cat(val key: String, val title: String, val desc: String)
-private val CATS = listOf(
-    Cat("service", "服务", "服务商 / Key / 地址"),
-    Cat("model", "模型与对话", "模型 / 思考 / 参数"),
-    Cat("models_prompts", "默认模型与提示词", "6 个任务模型 / 4 段提示词"),
-    Cat("quick", "快捷输入", "逐条管理"),
-    Cat("skills_memory", "技能与记忆", "Skills / 记忆"),
-    Cat("sessions", "会话与导入", "导入 / 管理"),
-    Cat("storage", "存储与缓存", "清理 / 占用"),
-    Cat("update", "版本与更新", "当前版本 / 检查更新 / 同步"),
-    Cat("prefs", "偏好设置", "界面偏好 / 主题"),
-    Cat("security", "安全", "启动密码 / 免密次数"),
-    Cat("about", "关于", "许可 / 日志"),
-)
+private val CATS = SettingsCatalog.root
 private val CAT_TITLE = CATS.associate { it.key to it.title } +
     mapOf("mp_models" to "默认模型", "mp_prompts" to "提示词",
-        "pref_ui" to "界面偏好设置", "pref_theme" to "主题")
+        "pref_ui" to "界面", "pref_theme" to "主题", "pref_notify" to "通知",
+        "pref_general" to "常规", "pref_net" to "网络", "quick" to "输入设置")
 
 @Composable
 fun SettingsMenuScreen(settings: SettingsStore) {
@@ -122,23 +110,30 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                         start = 18.dp, end = 18.dp,
                         top = LocalListCenterPad.current,
                         bottom = LocalListBottomPad.current)) {
-                    settings.rev   // 依赖 rev:设置改完立即重建列表内容
+                    settings.rev
                     when (cat) {
                         "service" -> serviceRows(settings, dialogs)
-                        "model" -> modelRows(settings, dialogs)
                         "quick" -> quickRows(settings, dialogs)
-                        "skills_memory" -> skillRows(settings, vm, dialogs)
-                        "sessions" -> sessionRows(settings, vm, dialogs)
+                        "skills" -> skillRows(settings, vm, dialogs)
+                        "assistant" -> assistantRows(settings, vm, dialogs)
+                        "backup" -> backupRows(settings, vm, dialogs)
                         "storage" -> storageRows(settings, vm, dialogs)
-                        "update" -> updateRows(settings, dialogs) { syncOpen = true }
                         "security" -> securityRows(settings, dialogs)
-                        "about" -> aboutRows(settings, vm, dialogs) { logPage = it }
-                    "models_prompts" -> modelsPromptsRows(settings, dialogs) { subPage = it }
-                    "prefs" -> prefRows(dialogs) { subPage = it }
-                    "pref_ui" -> uiPrefRows(settings, dialogs)
-                    "pref_theme" -> themePrefRows(settings, dialogs)
-                    "mp_models" -> defaultModelRows(settings, dialogs)
-                    "mp_prompts" -> promptRows(settings, dialogs)
+                        "about" -> {
+                            updateRows(settings, dialogs)
+                            aboutRows(settings, vm, dialogs) { logPage = it }
+                        }
+                        "search" -> searchRows(settings, dialogs)
+                        "sync" -> item { WCard("打开同步", "四位 PIN，只在同一局域网") { syncOpen = true } }
+                        "models_prompts" -> modelsPromptsRows(settings, dialogs) { subPage = it }
+                        "prefs" -> prefRows { subPage = it }
+                        "pref_ui" -> uiPrefRows(settings, dialogs)
+                        "pref_theme" -> themePrefRows(settings, dialogs)
+                        "pref_notify" -> notifyRows(settings, dialogs)
+                        "pref_general" -> generalRows(settings, dialogs) { subPage = it }
+                        "pref_net" -> netRows(settings, dialogs)
+                        "mp_models" -> defaultModelRows(settings, dialogs)
+                        "mp_prompts" -> promptRows(settings, dialogs)
                     }
                 }
                 RotaryList(listState, enabled = LocalCurrentPage.current == 3 && !syncOpen && logPage == null)
@@ -170,43 +165,121 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
 
 // ---------- 各行内容 ----------
 
-/** 偏好设置:界面偏好 + 主题 */
-private fun LazyListScope.prefRows(d: DialogController, openSub: (String) -> Unit) {
-    item { WCard("界面偏好设置", "文字对齐 / 逐行阅读顺序") { openSub("pref_ui") } }
-    item { WCard("主题", "配色 / 显示大小") { openSub("pref_theme") } }
+/** 偏好设置:主题、通知、常规、界面、网络。颜色模式在圆表上没有对应能力，不放。 */
+private fun LazyListScope.prefRows(openSub: (String) -> Unit) {
+    item { WCard("主题", "浅色 / 深色 / AMOLED") { openSub("pref_theme") } }
+    item { WCard("通知", "更新提醒 / 回复完成") { openSub("pref_notify") } }
+    item { WCard("常规", "思考 / 参数 / 输入") { openSub("pref_general") } }
+    item { WCard("界面", "消息显示 / 字体 / 代码块") { openSub("pref_ui") } }
+    item { WCard("网络", "User-Agent / 超时") { openSub("pref_net") } }
 }
 
-/** 界面偏好:对齐 + 逐行右起阅读(公式不受影响) */
 private fun LazyListScope.uiPrefRows(s: SettingsStore, d: DialogController) {
+    s.rev
     item { WCard("文字对齐", when (s.textAlignMode) { "center" -> "居中"; "right" -> "右对齐"; else -> "左对齐" }) {
         val opts = listOf("左对齐", "居中", "右对齐")
         val ids = listOf("left", "center", "right")
         d.choice("文字对齐", opts, ids.indexOf(s.textAlignMode).coerceAtLeast(0)) { i -> s.textAlignMode = ids[i] }
     } }
     item { WToggle("每行从右往左读", s.textRtl) { s.textRtl = it } }
-    item { WCard("说明", "阅读顺序只影响普通文字排版;数学公式仍按 LaTeX 正常顺序渲染") }
-}
-
-/** 主题:配色 + 显示大小(从"安全与外观"挪过来) */
-private fun LazyListScope.themePrefRows(s: SettingsStore, d: DialogController) {
+    item { WToggle("用户和回复换边", s.messageSwap) { s.messageSwap = it } }
+    item { WToggle("代码块自动换行", s.codeWrap) { s.codeWrap = it } }
     item {
         val act = LocalContext.current as? android.app.Activity
-        WCard("主题", "配色方案") {
+        WCard("字体大小", "%.2f".format(s.displayScale)) {
+            val opts = (0 until 9).map { 0.9f + it * 0.05f }
+            d.choice("字体大小", opts.map { "%.2f".format(it) }, opts.indexOf(s.displayScale).coerceAtLeast(0)) { i ->
+                s.displayScale = opts[i]; act?.recreate()
+            }
+        }
+    }
+}
+
+private fun LazyListScope.themePrefRows(s: SettingsStore, d: DialogController) {
+    s.rev
+    item {
+        val act = LocalContext.current as? android.app.Activity
+        WCard("主题", themeName(s.theme)) {
             val ids = listOf("light", "dark", "amoled")
             d.choice("主题", ids.map { themeName(it) }, ids.indexOf(s.theme).coerceAtLeast(0)) { i ->
                 s.theme = ids[i]; act?.recreate()
             }
         }
     }
+}
+
+private fun LazyListScope.notifyRows(s: SettingsStore, d: DialogController) {
+    s.rev
     item {
-        val act = LocalContext.current as? android.app.Activity
-        WCard("显示大小", "%.2f".format(s.displayScale)) {
-            val opts = (0 until 9).map { 0.9f + it * 0.05f }
-            d.choice("显示大小", opts.map { "%.2f".format(it) }, opts.indexOf(s.displayScale).coerceAtLeast(0)) { i ->
-                s.displayScale = opts[i]; act?.recreate()
-            }
+        val ctx = LocalContext.current
+        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+            if (ok) s.notifyUpdate = true
+        }
+        WToggle("更新提醒", s.notifyUpdate) { on ->
+            if (!on) s.notifyUpdate = false
+            else if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else s.notifyUpdate = true
         }
     }
+    item {
+        val ctx = LocalContext.current
+        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+            if (ok) s.notifyReply = true
+        }
+        WToggle("回复完成时通知", s.notifyReply) { on ->
+            if (!on) s.notifyReply = false
+            else if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else s.notifyReply = true
+        }
+    }
+    item { WCard("检查间隔(分钟)", s.updateCooldownMin.toString()) {
+        d.num("间隔(5-60)", s.updateCooldownMin.toFloat(), 5f, 60f) { s.updateCooldownMin = it.toInt() }
+    } }
+    item { WCard("说明", "离开应用后回复完成才会通知。通知里只有“已完成”，没有回复内容。") }
+}
+
+private fun LazyListScope.generalRows(s: SettingsStore, d: DialogController, openSub: (String) -> Unit) {
+    s.rev
+    item { WToggle("思考模式", s.thinkingEnabled) { s.thinkingEnabled = it } }
+    item { WCard("思考强度", s.reasoningEffort) { val o = listOf("low", "high", "max")
+        d.choice("思考强度", o, o.indexOf(s.reasoningEffort).coerceAtLeast(0)) { i -> s.reasoningEffort = o[i] } } }
+    item { WCard("温度", s.temperature.toString()) { d.num("温度(0-2)", s.temperature, 0f, 2f) { s.temperature = it } } }
+    item { WCard("Top P", s.topP.toString()) { d.num("Top P(0-1)", s.topP, 0f, 1f) { s.topP = it } } }
+    item { WCard("最大输出 tokens", if (s.maxTokens <= 0) "不限制" else s.maxTokens.toString()) {
+        d.num("max tokens(0=不限制)", s.maxTokens.toFloat(), 0f, 65536f) { s.maxTokens = it.toInt() } } }
+    item { WCard("上下文窗口", s.contextWindow.toString()) { d.num("上下文窗口", s.contextWindow.toFloat(), 10000f, 2000000f) { s.contextWindow = it.toInt() } } }
+    item { WCard("压缩阈值 %", "${s.compressThreshold}%") { d.num("压缩阈值(50-95)", s.compressThreshold.toFloat(), 50f, 95f) { s.compressThreshold = it.toInt() } } }
+    item { WToggle("自动生成会话标题", s.autoTitle) { s.autoTitle = it } }
+    item { WCard("输入设置", "快捷输入") { openSub("quick") } }
+}
+
+private fun LazyListScope.netRows(s: SettingsStore, d: DialogController) {
+    s.rev
+    item { WCard("User-Agent", s.userAgent.ifBlank { "WristChat" }) {
+        d.input("User-Agent", s.userAgent) { s.userAgent = it }
+    } }
+    item { WCard("请求超时(秒)", s.netTimeoutSec.toString()) {
+        d.num("超时(20-180)", s.netTimeoutSec.toFloat(), 20f, 180f) { s.netTimeoutSec = it.toInt() }
+    } }
+}
+
+private fun LazyListScope.searchRows(s: SettingsStore, d: DialogController) {
+    s.rev
+    item { WToggle("联网搜索", s.webSearch) { s.webSearch = it } }
+    item { WToggle("阅读消息里的链接", s.webRead) { s.webRead = it } }
+    item {
+        val flash = s.model == "deepseek-flash"
+        WCard("聊天模型", if (flash) "deepseek-flash" else "${s.model} · 搜索要用 deepseek-flash") {
+            if (!flash) s.model = "deepseek-flash"
+        }
+    }
+    item { WCard("说明", "搜索或阅读开着时，这一轮用 deepseek-flash，并在 tools 里声明 deepseek_web_search / deepseek_read_url。模型自己决定要不要搜。它报“工具列表里没有搜索”是因为这是服务端工具，不是函数。真正搜的时候，回复上方会写出搜索内容。") }
 }
 
 /** 默认模型与提示词:两个入口 */
@@ -254,6 +327,7 @@ private fun LazyListScope.promptRows(s: SettingsStore, d: DialogController) {
     } }
 }
 private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
+    s.rev
     item { WCard("服务商", Providers.byId(s.providerId).name) {
         val ids = listOf("deepseek", "qwen", "glm", "kimi", "volcano", "custom")
         d.choice("服务商", ids.map { Providers.byId(it).name }, ids.indexOf(s.providerId).coerceAtLeast(0)) { i ->
@@ -277,25 +351,24 @@ private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
     } }
 }
 
-private fun LazyListScope.modelRows(s: SettingsStore, d: DialogController) {
-    // 模型选择已挪到「默认模型与提示词 → 默认模型/全局模型设置」
-    item { WCard("系统提示词(应用级)", if (s.systemPrompt.isBlank()) "未设置" else "已设置") {
+private fun LazyListScope.assistantRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
+    s.rev
+    item { WCard("系统提示词", if (s.systemPrompt.isBlank()) "未设置" else "已设置") {
         d.input("系统提示词", s.systemPrompt, ml = true) { s.systemPrompt = it } } }
-    item { WToggle("思考模式(深度思考)", s.thinkingEnabled) { s.thinkingEnabled = it } }
-    item { WToggle("联网搜索与阅读链接", s.webTools) { s.webTools = it } }
-    item { WCard("思考强度", s.reasoningEffort) { val o = listOf("low", "high", "max")
-        d.choice("思考强度", o, o.indexOf(s.reasoningEffort).coerceAtLeast(0)) { i -> s.reasoningEffort = o[i] } } }
-    item { WCard("温度", s.temperature.toString() + "\n(高级参数:不要修改,除非你知道自己在干什么)") { d.num("温度(0-2)", s.temperature, 0f, 2f) { s.temperature = it } } }
-    item { WCard("Top P", s.topP.toString() + "\n(高级参数:不要修改,除非你知道自己在干什么)") { d.num("Top P(0-1)", s.topP, 0f, 1f) { s.topP = it } } }
-    item { WCard("最大输出 tokens", if (s.maxTokens <= 0) "不限制(留空)" else s.maxTokens.toString()) {
-        d.num("max tokens(0=不限制)", s.maxTokens.toFloat(), 0f, 65536f) { s.maxTokens = it.toInt() } } }
-    item { WCard("上下文窗口", s.contextWindow.toString()) { d.num("上下文窗口", s.contextWindow.toFloat(), 10000f, 2000000f) { s.contextWindow = it.toInt() } } }
-    item { WCard("压缩阈值 %", "${s.compressThreshold}%") { d.num("压缩阈值(50-95)", s.compressThreshold.toFloat(), 50f, 95f) { s.compressThreshold = it.toInt() } } }
-    item { WCard("自定义系统 Prompt", if (s.customPrompt.isBlank()) "(空)" else "已设置") { d.input("自定义 Prompt", s.customPrompt, ml = true) { s.customPrompt = it } } }
-    item { WToggle("自动生成会话标题", s.autoTitle) { s.autoTitle = it } }
+    item { WCard("自定义提示词", if (s.customPrompt.isBlank()) "未设置" else "已设置") {
+        d.input("自定义提示词", s.customPrompt, ml = true) { s.customPrompt = it } } }
+    item { WToggle("自动记忆", s.memoryAuto) { s.memoryAuto = it } }
+    item { val mems = vm.memoryStore.list()
+        WCard("记忆(${mems.size})", if (mems.isEmpty()) "(空)" else "点击删除") {
+            if (mems.isEmpty()) { d.text("记忆", "暂无记忆"); return@WCard }
+            d.items("记忆(点击删除)", mems.map { "${it.id}: ${it.content.take(30)}" }, { i -> vm.deleteMemory(mems[i].id) },
+                neutral = "清空全部") { vm.clearMemories() }
+        }
+    }
 }
 
 private fun LazyListScope.quickRows(s: SettingsStore, d: DialogController) {
+    s.rev
     item { WCard("＋ 添加快捷输入", "单行,上限 20") { quickEditDialog(s, d, null, null) } }
     // 以设置版本号为 key:增删改后立刻刷新(原来要退出再进才看到)
     val quick = s.getQuickInputs()
@@ -339,14 +412,6 @@ private fun LazyListScope.skillRows(s: SettingsStore, vm: SettingsViewModel, d: 
             if (s2.isNotEmpty()) d.items("选择要删除的技能", s2.map { it.name }, { i -> vm.deleteSkill(s2[i].fileName) })
         }
     } }
-    item { WToggle("自动记忆(模型写入)", s.memoryAuto) { s.memoryAuto = it } }
-    item { val mems = vm.memoryStore.list()
-        WCard("记忆(${mems.size})", if (mems.isEmpty()) "(空)" else "点击删除") {
-            if (mems.isEmpty()) { d.text("记忆", "暂无记忆"); return@WCard }
-            d.items("记忆(点击删除)", mems.map { "${it.id}: ${it.content.take(30)}" }, { i -> vm.deleteMemory(mems[i].id) },
-                neutral = "清空全部") { vm.clearMemories() }
-        }
-    }
 }
 
 private fun LazyListScope.sessionRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
@@ -388,12 +453,27 @@ private fun LazyListScope.sessionRows(s: SettingsStore, vm: SettingsViewModel, d
     } }
 }
 
+private fun LazyListScope.backupRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
+    item {
+        val ctx = LocalContext.current
+        val scope = rememberCoroutineScope()
+        WCard("导出会话", "只含会话，不含密钥") {
+            scope.launch(Dispatchers.IO) {
+                val text = vm.sessionStore.exportBody()
+                val r = exportText(ctx, "sessions.json", text)
+                kotlinx.coroutines.withContext(Dispatchers.Main) { d.text("导出", r) }
+            }
+        }
+    }
+    sessionRows(s, vm, d)
+}
+
 private fun LazyListScope.storageRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
     item { WCard("缓存详情", vm.cacheInfo.value ?: "") { vm.refreshSizes() } }
     // 文件删除移出主线程,避免 ANR(H10)
     item { val scope = rememberCoroutineScope()
-        WCard("清理缓存(安全)", "只清 WebView/临时文件;保留日志与更新包") {
-            d.confirm("清理缓存", "删除 WebView 缓存与临时文件,不影响数据") {
+        WCard("清理缓存", "只清临时文件;保留日志与更新包") {
+            d.confirm("清理缓存", "删除临时文件,不影响会话和设置") {
                 scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                     val freed = vm.clearCache()
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { d.text("结果", "已释放 ${vm.human(freed)}") }
@@ -413,7 +493,7 @@ private fun LazyListScope.storageRows(s: SettingsStore, vm: SettingsViewModel, d
     }
 }
 
-private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, openSync: () -> Unit) {
+private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController) {
     item {
         val ctx = LocalContext.current
         val scope = rememberCoroutineScope()
@@ -575,7 +655,6 @@ private fun LazyListScope.updateRows(s: SettingsStore, d: DialogController, open
             }
         }
     }
-    item { WCard("手机同步(二维码)", "") { openSync() } }
     item { WCard("自动检查冷却(分钟)", s.updateCooldownMin.toString()) { d.num("冷却(5-60)", s.updateCooldownMin.toFloat(), 5f, 60f) { s.updateCooldownMin = it.toInt() } } }
 }
 
@@ -598,7 +677,7 @@ private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: 
         WCard("会话文件自检", "磁盘上有哪些会话、是否能解析") { openLog("sess") }
         WCard("查看崩溃日志", "crash.log · 闪退堆栈") { openLog("crash") }
         WCard("ANR/卡死日志", "anr.log · 界面卡死的主线程堆栈") { openLog("anr") }
-        WCard("运行日志", "app.log · 更新/弹窗操作记录") { openLog("run") }
+        WCard("请求与运行日志", "只记状态码和工具名，不含对话和密钥") { openLog("run") }
     }
     item { val scope = rememberCoroutineScope()
         val ctx = LocalContext.current
@@ -610,7 +689,7 @@ private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: 
                 }
             }
         }
-        WCard("日志文件位置", "/data/data/io.github.xhr666.wristchat/files/\ncrash.log · anr.log · app.log\n(应用私有目录;或用「手机同步」网页查看)")
+        WCard("日志", "可在本页查看，或导出到 Download/WristChat")
     }
     item {
         val ctx = LocalContext.current
@@ -625,7 +704,8 @@ private const val LICENSE_TEXT = """
 第三方组件:
 - ZXing core (Apache-2.0)
 - Markwon (Apache-2.0)
-- KaTeX (MIT) / marked.js (MIT)
+- JLatexMath (GPL-2.0,带链接例外)
+- CN Wear Overlay (Apache-2.0)
 - AndroidX / Jetpack Compose (Apache-2.0)
 - kotlinx-coroutines (Apache-2.0)
 """

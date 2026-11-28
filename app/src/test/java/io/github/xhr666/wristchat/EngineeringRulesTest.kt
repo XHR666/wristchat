@@ -6,6 +6,7 @@ import io.github.xhr666.wristchat.data.Pricing
 import io.github.xhr666.wristchat.data.SessionAccounts
 import io.github.xhr666.wristchat.data.StreamRender
 import io.github.xhr666.wristchat.data.ThinkLabel
+import io.github.xhr666.wristchat.data.ToolTrace
 import io.github.xhr666.wristchat.data.WebTools
 import io.github.xhr666.wristchat.ui.chat.Latex
 import io.github.xhr666.wristchat.ui.RimScroll
@@ -255,9 +256,32 @@ class EngineeringRulesTest {
     }
 
     @Test fun `W1 联网工具不和记忆函数同时声明`() {
-        val types = WebTools.toolTypes(web = true, memory = true)
+        val types = WebTools.toolTypes(search = true, read = true, memory = true)
         assertEquals(listOf(WebTools.SEARCH, WebTools.READ_URL), types)
         assertFalse(types.contains("memory_tool"))
+        assertEquals(listOf(WebTools.SEARCH), WebTools.toolTypes(search = true, read = false, memory = true))
+        assertEquals(listOf("memory_tool"), WebTools.toolTypes(search = false, read = false, memory = true))
+    }
+
+    @Test fun `W2 搜索过程能写成短句`() {
+        assertEquals("正在搜索 今日新闻", ToolTrace.line("search", listOf("今日新闻"), "", false))
+        assertEquals("已阅读 https://example.com", ToolTrace.line("read_link", emptyList(), "https://example.com", true))
+        assertEquals("", ToolTrace.line("nope", emptyList(), "", false))
+    }
+
+    @Test fun `U1 设置根目录有搜索和备份且不含颜色模式`() {
+        val titles = io.github.xhr666.wristchat.ui.SettingsCatalog.root.map { it.title }
+        assertEquals("偏好设置", titles.first())
+        assertTrue(titles.contains("搜索服务"))
+        assertTrue(titles.contains("数据备份"))
+        assertFalse(titles.any { it.contains("颜色") })
+        assertTrue(titles.indexOf("提供商") < titles.indexOf("搜索服务"))
+    }
+
+    @Test fun `S2 收起后偏移不会跳到下一项`() {
+        assertEquals(79, io.github.xhr666.wristchat.ui.ScrollAnchor.clamp(400, 80))
+        assertEquals(10, io.github.xhr666.wristchat.ui.ScrollAnchor.clamp(10, 80))
+        assertEquals(0, io.github.xhr666.wristchat.ui.ScrollAnchor.clamp(5, 0))
     }
 
     @Test fun `N1 JSON null 不会变成字符串 null`() {

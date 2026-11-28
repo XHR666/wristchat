@@ -17,10 +17,16 @@ class SettingsStore(context: Context) {
     private val revState = androidx.compose.runtime.mutableStateOf(0)
     val rev: Int get() = revState.value
 
+    /**
+     * 监听器必须自己持有。系统用弱引用保存它，匿名对象会被回收，
+     * 之后改服务商要退出重进才看得到。
+     */
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        revState.value += 1
+    }
+
     init {
-        prefs.registerOnSharedPreferenceChangeListener { _, _ ->
-            try { revState.value += 1 } catch (_: Throwable) {}
-        }
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     // ---- Provider / Key ----
@@ -99,10 +105,43 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_THINKING, true)
         set(v) = prefs.edit().putBoolean(KEY_THINKING, v).apply()
 
-    /** 联网搜索 + 阅读消息里的链接。和记忆函数工具不能同时声明。 */
+    /** 旧开关。新安装分开用 webSearch / webRead；没单独存过时沿用这个值。 */
     var webTools: Boolean
         get() = prefs.getBoolean(KEY_WEB_TOOLS, true)
         set(v) = prefs.edit().putBoolean(KEY_WEB_TOOLS, v).apply()
+
+    var webSearch: Boolean
+        get() = if (prefs.contains(KEY_WEB_SEARCH)) prefs.getBoolean(KEY_WEB_SEARCH, true) else webTools
+        set(v) = prefs.edit().putBoolean(KEY_WEB_SEARCH, v).apply()
+
+    var webRead: Boolean
+        get() = if (prefs.contains(KEY_WEB_READ)) prefs.getBoolean(KEY_WEB_READ, true) else webTools
+        set(v) = prefs.edit().putBoolean(KEY_WEB_READ, v).apply()
+
+    var notifyUpdate: Boolean
+        get() = prefs.getBoolean(KEY_NOTIFY_UPDATE, false)
+        set(v) = prefs.edit().putBoolean(KEY_NOTIFY_UPDATE, v).apply()
+
+    var notifyReply: Boolean
+        get() = prefs.getBoolean(KEY_NOTIFY_REPLY, false)
+        set(v) = prefs.edit().putBoolean(KEY_NOTIFY_REPLY, v).apply()
+
+    /** 代码块按屏幕宽度换行。 */
+    var codeWrap: Boolean
+        get() = prefs.getBoolean(KEY_CODE_WRAP, true)
+        set(v) = prefs.edit().putBoolean(KEY_CODE_WRAP, v).apply()
+
+    var userAgent: String
+        get() = prefs.getString(KEY_UA, "WristChat") ?: "WristChat"
+        set(v) {
+            val clean = v.replace(Regex("sk-[A-Za-z0-9_\\-]{4,}"), "")
+                .replace("\r", " ").replace("\n", " ").trim().take(120)
+            prefs.edit().putString(KEY_UA, clean.ifBlank { "WristChat" }).apply()
+        }
+
+    var netTimeoutSec: Int
+        get() = prefs.getInt(KEY_NET_TIMEOUT, 90).coerceIn(20, 180)
+        set(v) = prefs.edit().putInt(KEY_NET_TIMEOUT, v.coerceIn(20, 180)).apply()
 
     /** 文字对齐:left / center / right */
     var textAlignMode: String
@@ -342,6 +381,13 @@ Requirements:
 """.trimIndent()
         private const val KEY_THINKING = "thinking"
         private const val KEY_WEB_TOOLS = "web_tools"
+        private const val KEY_WEB_SEARCH = "web_search"
+        private const val KEY_WEB_READ = "web_read"
+        private const val KEY_NOTIFY_UPDATE = "notify_update"
+        private const val KEY_NOTIFY_REPLY = "notify_reply"
+        private const val KEY_CODE_WRAP = "code_wrap"
+        private const val KEY_UA = "user_agent"
+        private const val KEY_NET_TIMEOUT = "net_timeout_sec"
         private const val KEY_TEXT_ALIGN = "text_align"
         private const val KEY_TEXT_RTL = "text_rtl"
         private const val KEY_MSG_SWAP = "message_swap"

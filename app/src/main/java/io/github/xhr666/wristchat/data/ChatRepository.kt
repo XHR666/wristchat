@@ -15,6 +15,7 @@ sealed class ChatResult {
         val model: String,
         val serverToolCalls: String = "",
         val citations: String = "",
+        val toolNote: String = "",
     ) : ChatResult()
 
     data class Error(val message: String, val httpCode: Int = 0) : ChatResult()
@@ -80,13 +81,17 @@ class ChatRepository(
         imageFiles: List<String> = emptyList(),
         enableMemory: Boolean,
         modelOverride: String? = null,
-        onPartial: ((content: String, reasoning: String) -> Unit)? = null,
+        onPartial: ((content: String, reasoning: String, toolNote: String) -> Unit)? = null,
     ): ChatResult {
         val provider = Providers.resolve(settings)
         val apiKey = settings.apiKey
         if (apiKey.isBlank()) return ChatResult.Error("请先在设置中填写 API Key")
         val url = provider.defaultBaseUrl + provider.defaultPath
-        val model = (modelOverride ?: settings.model).ifBlank { provider.models.firstOrNull() ?: "deepseek-flash" }
+        val picked = (modelOverride ?: settings.model).ifBlank { provider.models.firstOrNull() ?: "deepseek-flash" }
+        val searchOn = settings.webSearch && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
+        val readOn = settings.webRead && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
+        // 官方联网工具只挂在 deepseek-flash 上。开着搜索或阅读时，这一轮就用它。
+        val model = if (searchOn || readOn) "deepseek-flash" else picked
         val vision = supportsVision(model)
         if (imageFiles.isNotEmpty() && !vision) {
             return ChatResult.Error("当前模型($model)不支持图片,请在设置里切换到 $VISION_MODEL")
@@ -98,8 +103,8 @@ class ChatRepository(
         settings.systemPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(0, it) }
         settings.customPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
         SkillStoreProvider.skillsPrompt?.takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
-        val web = settings.webTools && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
-        val declared = WebTools.toolTypes(web, enableMemory)
+        val declared = WebTools.toolTypes(searchOn, readOn, enableMemory)
+        val web = searchOn || readOn
         if (enableMemory) {
             memory.buildMemoriesTag().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
             // 联网工具和 memory_tool 不能同时声明。联网开着时只把记忆放进上下文。
@@ -121,11 +126,12 @@ class ChatRepository(
         if (fullSystem.isNotBlank()) {
             messages.put(JSONObject().put("role", "system").put("content", fullSystem))
         }
-        // 带 tools 时,官方要求把上一轮 reasoning_content 原样带回,即使本轮没有调用工具。
+        // 带 tools 且开着思考时,官方要求把上一轮 reasoning_content 原样带回。思考关掉时不要塞空字段。
         val toolsOn = declared.isNotEmpty()
+        val passReasoning = toolsOn && settings.thinkingEnabled
         safeHistory.forEach { m ->
             val o = JSONObject().put("role", m.role).put("content", contentOf(m, vision))
-            if (toolsOn && m.role == "assistant") {
+            if (passReasoning && m.role == "assistant") {
                 o.put("reasoning_content", m.reasoning)
             }
             if (web && m.role == "assistant" && m.serverToolCalls.isNotBlank()) {
@@ -160,6 +166,8 @@ class ChatRepository(
             }
         }
 
+        val timeoutMs = settings.netTimeoutSec * 1000
+        val userAgent = settings.userAgent
         val streamed = onPartial != null
         if (streamed) {
             body.put("stream", true)
@@ -167,9 +175,10 @@ class ChatRepository(
         }
         val msg: JSONObject
         val usage: TokenUsage
+        var liveNote = ""
         if (!streamed) {
             val (code, text) = try {
-                withContext(Dispatchers.IO) { Http.postJson(url, body.toString(), apiKey) }
+                withContext(Dispatchers.IO) { Http.postJson(url, body.toString(), apiKey, timeoutMs = timeoutMs, userAgent = userAgent) }
             } catch (e: Exception) {
                 return ChatResult.Error("网络错误:${e.message}")
             }
@@ -179,24 +188,31 @@ class ChatRepository(
                 ?: return ChatResult.Error("响应缺少 choices")
             msg = choice.optJSONObject("message") ?: JSONObject()
             usage = UsageJson.parse(root.optJSONObject("usage"))
+            liveNote = ToolTrace.fromCalls(serverToolsOf(msg))
+            AppLog.i("api", apiLine(model, declared, code, liveNote.isNotBlank()))
         } else {
             val acc = StreamAccum()
             val (code, err) = try {
                 withContext(Dispatchers.IO) {
-                    Http.postJsonStream(url, body.toString(), apiKey) { line ->
+                    Http.postJsonStream(url, body.toString(), apiKey, timeoutMs = timeoutMs, userAgent = userAgent) { line ->
                         val ev = SseEvents.parseLine(line) ?: return@postJsonStream
                         if (ev.done) return@postJsonStream
                         if (ev.content.isNotEmpty()) acc.content.append(ev.content)
                         if (ev.reasoning.isNotEmpty()) acc.reasoning.append(ev.reasoning)
                         ev.usage?.let { acc.usage = it }
                         acc.absorb(ev.raw)
-                        onPartial.invoke(acc.content.toString(), acc.reasoning.toString())
+                        val step = ToolTrace.fromEvent(ev.raw)
+                        if (step.isNotEmpty()) acc.addNote(step)
+                        onPartial.invoke(acc.content.toString(), acc.reasoning.toString(), acc.toolNote())
                     }
                 }
             } catch (e: Exception) {
                 return ChatResult.Error("网络错误:${e.message}")
             }
-            if (code !in 200..299) return ChatResult.Error(parseError(code, err), code)
+            if (code !in 200..299) {
+                AppLog.i("api", apiLine(model, declared, code, false))
+                return ChatResult.Error(parseError(code, err), code)
+            }
             msg = JSONObject().apply {
                 put("content", acc.content.toString())
                 put("reasoning_content", acc.reasoning.toString())
@@ -205,7 +221,11 @@ class ChatRepository(
                 if (acc.annotations.isNotBlank()) put("annotations", JSONArray(acc.annotations))
             }
             usage = acc.usage ?: TokenUsage()
-            onPartial.invoke(acc.content.toString(), acc.reasoning.toString())
+            val fromCalls = ToolTrace.fromCalls(acc.serverTools)
+            if (fromCalls.isNotEmpty()) acc.addNote(fromCalls)
+            liveNote = acc.toolNote()
+            AppLog.i("api", apiLine(model, declared, code, liveNote.isNotBlank()))
+            onPartial.invoke(acc.content.toString(), acc.reasoning.toString(), acc.toolNote())
         }
         val now = System.currentTimeMillis() / 1000
         val cost = Pricing.cost(model, now, usage.cacheHit.toLong(), usage.cacheMiss.toLong(), usage.completionTokens.toLong())
@@ -242,7 +262,7 @@ class ChatRepository(
                 messages.put(JSONObject().apply {
                     put("role", "assistant")
                     put("content", JsonText.of(msg, "content"))
-                    if (declared.isNotEmpty()) put("reasoning_content", JsonText.of(msg, "reasoning_content"))
+                    if (passReasoning) put("reasoning_content", JsonText.of(msg, "reasoning_content"))
                     put("tool_calls", toolCalls)
                 })
                 for (i in 0 until toolResults.length()) messages.put(toolResults.get(i))
@@ -250,7 +270,7 @@ class ChatRepository(
                 body.remove("stream_options")
                 val body2 = body.put("messages", messages)
                 val (code2, text2) = try {
-                    withContext(Dispatchers.IO) { Http.postJson(url, body2.toString(), apiKey) }
+                    withContext(Dispatchers.IO) { Http.postJson(url, body2.toString(), apiKey, timeoutMs = timeoutMs, userAgent = userAgent) }
                 } catch (e: Exception) {
                     return ChatResult.Error("记忆处理后网络错误:${e.message}")
                 }
@@ -260,7 +280,7 @@ class ChatRepository(
                 val msg2 = choice2.optJSONObject("message") ?: JSONObject()
                 val usage2 = UsageJson.parse(root2.optJSONObject("usage"))
                 val cost2 = cost + Pricing.cost(model, now, usage2.cacheHit.toLong(), usage2.cacheMiss.toLong(), usage2.completionTokens.toLong())
-                onPartial?.invoke(JsonText.of(msg2, "content"), JsonText.of(msg2, "reasoning_content"))
+                onPartial?.invoke(JsonText.of(msg2, "content"), JsonText.of(msg2, "reasoning_content"), liveNote)
                 val finalText = JsonText.of(msg2, "content").ifBlank {
                     if (ops.isNotEmpty()) "✓ 已${if (ops.any { it.action == "delete" }) "删除" else "保存"} ${ops.size} 条记忆" else ""
                 }
@@ -280,6 +300,7 @@ class ChatRepository(
                     model = model,
                     serverToolCalls = serverToolsOf(msg2).ifBlank { serverToolsOf(msg) },
                     citations = citationsOf(msg2).ifBlank { citationsOf(msg) },
+                    toolNote = liveNote,
                 )
             }
         }
@@ -292,7 +313,14 @@ class ChatRepository(
             model = model,
             serverToolCalls = serverToolsOf(msg),
             citations = citationsOf(msg),
+            toolNote = liveNote,
         )
+    }
+
+    /** 只记模型、声明了哪些工具、状态码。不记正文、链接和密钥。 */
+    private fun apiLine(model: String, tools: List<String>, code: Int, searched: Boolean): String {
+        val names = tools.joinToString(",").ifBlank { "-" }
+        return "model=$model tools=$names http=$code searched=$searched"
     }
 
     /**
@@ -447,6 +475,15 @@ private class StreamAccum {
     val tools = JSONArray()
     var serverTools: String = ""
     var annotations: String = ""
+    private val notes = LinkedHashSet<String>()
+
+    fun addNote(s: String) {
+        if (s.isBlank()) return
+        notes.add(s)
+        while (notes.size > 8) notes.remove(notes.first())
+    }
+
+    fun toolNote(): String = notes.joinToString("\n")
 
     fun absorb(root: JSONObject?) {
         takeTools(root)

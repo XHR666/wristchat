@@ -19,6 +19,7 @@ object Http {
         bearer: String? = null,
         timeoutMs: Int = READ_TIMEOUT_CHAT,
         extraHeaders: Map<String, String> = emptyMap(),
+        userAgent: String = "",
     ): Pair<Int, String> {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -26,6 +27,7 @@ object Http {
             readTimeout = timeoutMs
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
+            if (userAgent.isNotBlank()) setRequestProperty("User-Agent", userAgent)
             bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
             extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
         }
@@ -43,6 +45,7 @@ object Http {
         body: String,
         bearer: String? = null,
         timeoutMs: Int = READ_TIMEOUT_CHAT,
+        userAgent: String = "",
         onLine: (String) -> Unit,
     ): Pair<Int, String> {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -52,6 +55,7 @@ object Http {
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "text/event-stream")
+            if (userAgent.isNotBlank()) setRequestProperty("User-Agent", userAgent)
             bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }

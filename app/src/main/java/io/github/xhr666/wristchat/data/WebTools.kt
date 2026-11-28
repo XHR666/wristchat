@@ -8,9 +8,10 @@ object WebTools {
     const val SEARCH = "deepseek_web_search"
     const val READ_URL = "deepseek_read_url"
 
-    fun toolTypes(web: Boolean, memory: Boolean): List<String> = when {
-        web -> listOf(SEARCH, READ_URL)
-        memory -> listOf("memory_tool")
-        else -> emptyList()
+    /** 搜索和阅读可以分开声明。只要声明了其中任何一个，就不能再带 memory_tool。 */
+    fun toolTypes(search: Boolean, read: Boolean, memory: Boolean): List<String> = buildList {
+        if (search) add(SEARCH)
+        if (read) add(READ_URL)
+        if (isEmpty() && memory) add("memory_tool")
     }
 }

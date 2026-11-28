@@ -65,7 +65,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         val skillBytes = skillStore.totalSizeBytes()
         val webCache = webViewCacheSize()
         _sessionsSize.postValue(human(sesBytes))
-        _cacheInfo.postValue("WebView 缓存:${human(webCache)} · 会话:${human(sesBytes)} · 记忆:${human(memBytes)} · 技能:${human(skillBytes)}")
+        _cacheInfo.postValue("临时缓存:${human(webCache)} · 会话:${human(sesBytes)} · 记忆:${human(memBytes)} · 技能:${human(skillBytes)}")
     }
 
     private fun attachmentBytes(): Long {

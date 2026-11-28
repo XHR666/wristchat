@@ -15,6 +15,7 @@ data class ChatMessage(
     val reasoningMs: Long = 0,
     val serverToolCalls: String = "",
     val citations: String = "",
+    val toolNote: String = "",
     val ts: Long = System.currentTimeMillis(),
     val usage: TokenUsage? = null,
     val cost: Double = 0.0,
@@ -148,6 +149,7 @@ class SessionStore(private val context: Context) {
                     reasoningMs = m.optLong("reasoningMs"),
                     serverToolCalls = m.optString("serverToolCalls"),
                     citations = m.optString("citations"),
+                    toolNote = m.optString("toolNote"),
                     ts = m.optLong("ts"),
                     usage = m.optJSONObject("usage")?.let { u ->
                         TokenUsage(
@@ -214,6 +216,7 @@ class SessionStore(private val context: Context) {
                     if (m.reasoningMs > 0) put("reasoningMs", m.reasoningMs)
                     if (m.serverToolCalls.isNotBlank()) put("serverToolCalls", m.serverToolCalls)
                     if (m.citations.isNotBlank()) put("citations", m.citations)
+                    if (m.toolNote.isNotBlank()) put("toolNote", m.toolNote)
                     put("ts", m.ts)
                     m.usage?.let { u ->
                         put("usage", JSONObject().apply {
@@ -305,5 +308,14 @@ class SessionStore(private val context: Context) {
         }
         s.totalCost += cost
         save(s)
+    }
+
+    /** 导出会话文件本身。会话文件里没有密钥。 */
+    fun exportBody(): String {
+        val arr = JSONArray()
+        dir.listFiles()?.filter { it.isFile && it.name.endsWith(".json") }?.sortedBy { it.name }?.forEach { f ->
+            runCatching { arr.put(JSONObject(f.readText())) }
+        }
+        return arr.toString()
     }
 }

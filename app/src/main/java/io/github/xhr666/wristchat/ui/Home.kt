@@ -10,7 +10,6 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import io.github.xhr666.wristchat.WristChatApp
@@ -81,16 +80,7 @@ fun HomePager(settings: SettingsStore) {
             userScrollEnabled = !PagerLock.locked,
             modifier = Modifier.fillMaxSize(),
         ) { page ->
-            // 页面切换焦点效果:居中的整页放大,向两侧滑出时逐渐缩小淡出
-            // graphicsLayer 块内读取滚动状态 = 绘制阶段读取,不触发逐帧重组
-            Box(Modifier.fillMaxSize().graphicsLayer {
-                val off = kotlin.math.abs((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
-                val f = off.coerceIn(0f, 1f)
-                val sc = 1f - 0.12f * f
-                scaleX = sc
-                scaleY = sc
-                alpha = 1f - 0.35f * f
-            }) {
+            Box(Modifier.fillMaxSize()) {
                 when (page) {
                     0 -> SessionsScreen(settings, chatVm, onOpenChat = { scope.launch { pagerState.animateScrollToPage(1) } })
                     1 -> ChatScreen(settings, chatVm)
@@ -98,6 +88,21 @@ fun HomePager(settings: SettingsStore) {
                     else -> SettingsMenuScreen(settings)
                 }
             }
+        }
+        // 更新提醒只在空闲后检查,不挡冷启动滑动。通知里不带对话内容。
+        LaunchedEffect(Unit) {
+            if (!settings.notifyUpdate) return@LaunchedEffect
+            kotlinx.coroutines.delay(8000)
+            val now = System.currentTimeMillis()
+            if (now - settings.lastUpdateCheck < settings.updateCooldownMin * 60_000L) return@LaunchedEffect
+            val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    val r = io.github.xhr666.wristchat.data.UpdateRepository(settings).check()
+                    settings.lastUpdateCheck = System.currentTimeMillis()
+                    (r as? io.github.xhr666.wristchat.data.UpdateResult.Found)?.info?.tagName
+                }.getOrNull()
+            }
+            if (!found.isNullOrBlank()) io.github.xhr666.wristchat.data.Notices.updateReady(app, found)
         }
     }
 }

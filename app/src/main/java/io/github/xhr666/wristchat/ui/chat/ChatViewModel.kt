@@ -7,6 +7,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import io.github.xhr666.wristchat.WristChatApp
 import io.github.xhr666.wristchat.data.ChatMessage
+import io.github.xhr666.wristchat.data.Notices
 import io.github.xhr666.wristchat.data.ChatRepository
 import io.github.xhr666.wristchat.data.ChatResult
 import io.github.xhr666.wristchat.data.MemoryStore
@@ -80,11 +81,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         _draft.value = io.github.xhr666.wristchat.data.DraftStore.load(app)
         _quickInputs.value = settings.getQuickInputs()
-        // 冷启动只解析最近一个会话文件(其余异步);技能扫描也挪到 IO,避免首帧卡顿
-        loadOrCreateSession()
-        // 冷启动先把当前会话画出来,技能扫描和全量会话列表往后放,避免和第一次左右滑抢主线程。
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            kotlinx.coroutines.delay(800)
+            val s = sessionStore.latest() ?: sessionStore.create()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                _session.value = s
+                _title.value = s.title
+                refreshDetails()
+            }
+        }
+        // 技能扫描和全量会话列表再晚一点,避开冷启动后第一次左右滑。
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.delay(4000)
             SkillStoreProviderInject.refresh(skillStore)
             refreshSessions()
         }
@@ -318,33 +325,37 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             maybeCompress(s)
             // 历史不含刚追加的这条用户消息和占位回复(仓库会把提问作为本轮带上去)
             val history = s.messages.filter { it !== userMsg && it.ts != aiTs }
-            val updates = Channel<Pair<String, String>>(Channel.CONFLATED)
+            val updates = Channel<Triple<String, String, String>>(Channel.CONFLATED)
             val paint = launch(kotlinx.coroutines.Dispatchers.Main) {
-                for ((c, r) in updates) {
+                for ((c, r, note) in updates) {
                     if (r.isNotEmpty() && thinkStart == 0L) {
                         thinkStart = System.currentTimeMillis()
                         _thinkStart.value = thinkStart
                     }
-                    replaceAssistant(s, aiTs, c, r, null, 0.0)
+                    replaceAssistant(s, aiTs, c, r, null, 0.0, toolNote = note)
                 }
             }
             val result = repo.chat(history, trimmed, imageFiles = imageFiles,
                 enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK,
                 modelOverride = modelOverride,
-                onPartial = { c, r -> updates.trySend(c to r) })
+                onPartial = { c, r, note -> updates.trySend(Triple(c, r, note)) })
             updates.close()
             paint.join()
             when (result) {
                 is ChatResult.Success -> {
                     val elapsed = if (thinkStart == 0L) 0L else System.currentTimeMillis() - thinkStart
                     replaceAssistant(s, aiTs, result.content, result.reasoning, result.usage, result.cost,
-                        reasoningMs = elapsed, serverTools = result.serverToolCalls, citations = result.citations)
+                        reasoningMs = elapsed, serverTools = result.serverToolCalls, citations = result.citations,
+                        toolNote = result.toolNote)
                     sessionStore.reconcile(s)
                     sessionStore.save(s)
                     bump()
                     _status.value = null
                     if (result.memoryOps.isNotEmpty()) {
                         flashStatus("已更新 ${result.memoryOps.size} 条记忆")
+                    }
+                    if (settings.notifyReply && !(getApplication() as WristChatApp).appVisible) {
+                        Notices.replyReady(getApplication())
                     }
                     refreshSessions()
                     maybeAutoTitle(s, trimmed, result.content)
@@ -375,7 +386,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun replaceAssistant(
         s: Session, ts: Long, content: String, reasoning: String,
         usage: TokenUsage?, cost: Double,
-        reasoningMs: Long = 0, serverTools: String = "", citations: String = "",
+        reasoningMs: Long = 0, serverTools: String = "", citations: String = "", toolNote: String = "",
     ) {
         val i = s.messages.indexOfLast { it.ts == ts && it.role == "assistant" }
         val prev = if (i >= 0) s.messages[i] else null
@@ -384,6 +395,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             reasoningMs = if (reasoningMs > 0) reasoningMs else prev?.reasoningMs ?: 0,
             serverToolCalls = serverTools.ifBlank { prev?.serverToolCalls.orEmpty() },
             citations = citations.ifBlank { prev?.citations.orEmpty() },
+            toolNote = toolNote.ifBlank { prev?.toolNote.orEmpty() },
             ts = ts, usage = usage, cost = cost,
         )
         if (i >= 0) s.messages[i] = msg else s.messages.add(msg)

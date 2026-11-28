@@ -14,7 +14,7 @@ import ru.noties.jlatexmath.JLatexMathDrawable
 
 /**
  * 气泡文字:Markwon 排 Markdown,JLatexMath 把闭合公式画成图嵌进去。
- * 流式输出时未闭合的符号留在末尾,原样显示,不交给 KaTeX/WebView。
+ * 流式输出时未闭合的符号留在末尾,原样显示。
  */
 object RichText {
     private val math = Regex(
