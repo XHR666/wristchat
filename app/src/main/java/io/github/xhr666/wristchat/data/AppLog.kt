@@ -13,8 +13,12 @@ object AppLog {
     fun i(tag: String, msg: String) {
         val c = ctx ?: return
         try {
+            val safe = msg
+                .replace(Regex("sk-[A-Za-z0-9_\\-]{6,}"), "sk-***")
+                .replace(Regex("(?i)bearer\\s+\\S+"), "Bearer ***")
+                .take(400)
             val f = File(c.filesDir, "app.log")
-            val line = "${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())} [$tag] $msg\n"
+            val line = "${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())} [$tag] $safe\n"
             f.appendText(line)
             if (f.length() > 100_000) f.writeText(f.readText().takeLast(80_000))
         } catch (_: Exception) {}

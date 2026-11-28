@@ -317,7 +317,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             // 上下文压缩检查
             maybeCompress(s)
             // 历史不含刚追加的这条用户消息和占位回复(仓库会把提问作为本轮带上去)
-            val history = s.messages.filter { it.role != "system" && it !== userMsg && it.ts != aiTs }
+            val history = s.messages.filter { it !== userMsg && it.ts != aiTs }
             val updates = Channel<Pair<String, String>>(Channel.CONFLATED)
             val paint = launch(kotlinx.coroutines.Dispatchers.Main) {
                 for ((c, r) in updates) {

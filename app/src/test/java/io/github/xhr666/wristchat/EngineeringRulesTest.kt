@@ -8,11 +8,14 @@ import io.github.xhr666.wristchat.data.StreamRender
 import io.github.xhr666.wristchat.data.ThinkLabel
 import io.github.xhr666.wristchat.data.WebTools
 import io.github.xhr666.wristchat.ui.chat.Latex
+import io.github.xhr666.wristchat.ui.RimScroll
 import io.github.xhr666.wristchat.ui.common.RoundInsets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import io.github.xhr666.wristchat.data.ApiTranscript
+import io.github.xhr666.wristchat.data.ChatMessage
 import java.util.Calendar
 import java.util.TimeZone
 
@@ -279,6 +282,67 @@ class EngineeringRulesTest {
         assertTrue(ThinkLabel.streaming(3).startsWith("思考中"))
         assertTrue(ThinkLabel.done(3).startsWith("已思考"))
         assertFalse(ThinkLabel.done(3).contains("思考中"))
+    }
+
+    @Test fun `H1 开头的助手消息不会发给接口`() {
+        val out = ApiTranscript.prepare(listOf(
+            ChatMessage(role = "assistant", content = "本地提示"),
+            ChatMessage(role = "user", content = "现在可以吗"),
+        ))
+        assertEquals(1, out.size)
+        assertEquals("user", out[0].role)
+    }
+
+    @Test fun `H2 连续两条助手只保留紧跟用户的那条`() {
+        val out = ApiTranscript.prepare(listOf(
+            ChatMessage(role = "user", content = "问"),
+            ChatMessage(role = "assistant", content = "答"),
+            ChatMessage(role = "assistant", content = "⚠️ 错误"),
+        ))
+        assertEquals(2, out.size)
+        assertEquals("答", out[1].content)
+    }
+
+    @Test fun `H3 错误气泡不会再送回去`() {
+        val out = ApiTranscript.prepare(listOf(
+            ChatMessage(role = "user", content = "问"),
+            ChatMessage(role = "assistant", content = "⚠️ an assistant message must follow a user message"),
+            ChatMessage(role = "user", content = "再问"),
+        ))
+        assertEquals(listOf("问\n再问"), out.map { it.content })
+    }
+
+    @Test fun `H4 报错气泡丢掉之后新提问并进上一条用户消息`() {
+        val out = ApiTranscript.build(
+            listOf(
+                ChatMessage(role = "user", content = "问"),
+                ChatMessage(role = "assistant", content = "⚠️ an assistant message must follow a user message"),
+            ),
+            ChatMessage(role = "user", content = "现在可以吗"),
+        )
+        assertEquals(listOf("user"), out.map { it.role })
+        assertEquals("问\n现在可以吗", out[0].content)
+    }
+
+    @Test fun `H5 压缩摘要放进前言,不单独占一条消息`() {
+        val history = listOf(
+            ChatMessage(role = "system", content = "对话摘要(自动压缩):\n之前在谈环保"),
+            ChatMessage(role = "assistant", content = "先说结论"),
+            ChatMessage(role = "user", content = "继续"),
+        )
+        assertEquals("对话摘要(自动压缩):\n之前在谈环保\n\n先说结论", ApiTranscript.preface(history))
+        val out = ApiTranscript.prepare(history)
+        assertEquals(listOf("user"), out.map { it.role })
+    }
+
+    @Test fun `S1 滑块停在右侧 44 度轨道里`() {
+        val (start, len) = RimScroll.thumb(0f, 0.2f)
+        assertTrue(start >= RimScroll.TRACK_START - 0.01f)
+        assertTrue(start + len <= RimScroll.TRACK_START + RimScroll.TRACK_SWEEP + 0.01f)
+        assertTrue(len <= RimScroll.TRACK_SWEEP)
+        val (atEnd, lenEnd) = RimScroll.thumb(1f, 0.2f)
+        assertTrue(atEnd > start)
+        assertEquals(len, lenEnd, 0.01f)
     }
 
     @Test fun `R2 靠近圆边的左右留白大于圆心`() {

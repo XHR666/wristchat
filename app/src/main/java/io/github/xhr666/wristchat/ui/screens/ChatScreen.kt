@@ -95,6 +95,7 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
         title = title.ifBlank { settings.model }.let { if (it == "新会话") settings.model else it },
         showTimeAlways = true,
         scrollIndicator = listState,
+        scrollFromEnd = true,
         actions = {
             SmallAction("ⓘ") { showDetails = true }
             SmallAction("⌨") { quickPanel = !quickPanel }

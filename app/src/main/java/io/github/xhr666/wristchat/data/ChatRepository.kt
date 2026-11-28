@@ -99,6 +99,7 @@ class ChatRepository(
         settings.customPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
         SkillStoreProvider.skillsPrompt?.takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
         val web = settings.webTools && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK
+        val declared = WebTools.toolTypes(web, enableMemory)
         if (enableMemory) {
             memory.buildMemoriesTag().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
             // 联网工具和 memory_tool 不能同时声明。联网开着时只把记忆放进上下文。
@@ -109,15 +110,22 @@ class ChatRepository(
             )
         }
         val systemContent = sysParts.joinToString("\n\n")
+        val preface = ApiTranscript.preface(history)
+        val fullSystem = listOf(systemContent, preface).filter { it.isNotBlank() }.joinToString("\n\n")
 
+        val safeHistory = ApiTranscript.build(
+            history,
+            ChatMessage(role = "user", content = newUserText, imgs = imageFiles),
+        )
         val messages = JSONArray()
-        if (systemContent.isNotBlank()) {
-            messages.put(JSONObject().put("role", "system").put("content", systemContent))
+        if (fullSystem.isNotBlank()) {
+            messages.put(JSONObject().put("role", "system").put("content", fullSystem))
         }
-        // 历史(不含 reasoning_content:官方规则——无 tools 时忽略;带 tools 时回传)
-        history.forEach { m ->
+        // 带 tools 时,官方要求把上一轮 reasoning_content 原样带回,即使本轮没有调用工具。
+        val toolsOn = declared.isNotEmpty()
+        safeHistory.forEach { m ->
             val o = JSONObject().put("role", m.role).put("content", contentOf(m, vision))
-            if ((enableMemory || web) && m.role == "assistant" && m.reasoning.isNotBlank()) {
+            if (toolsOn && m.role == "assistant") {
                 o.put("reasoning_content", m.reasoning)
             }
             if (web && m.role == "assistant" && m.serverToolCalls.isNotBlank()) {
@@ -125,11 +133,6 @@ class ChatRepository(
             }
             messages.put(o)
         }
-        // 本轮提问:带图时 content 为 text+image 块数组(官方 vision 格式)
-        val ask = if (imageFiles.isNotEmpty() && vision) {
-            contentOf(ChatMessage(role = "user", content = newUserText, imgs = imageFiles), vision)
-        } else newUserText
-        messages.put(JSONObject().put("role", "user").put("content", ask))
 
         val body = JSONObject().apply {
             put("model", model)
@@ -146,10 +149,10 @@ class ChatRepository(
                 put("temperature", settings.temperature.toDouble())
                 put("top_p", settings.topP.toDouble())
             }
-            val declared = WebTools.toolTypes(web, enableMemory)
+            val declaredTools = declared
             if (web) {
                 put("tools", JSONArray().apply {
-                    declared.forEach { put(JSONObject().put("type", it)) }
+                    declaredTools.forEach { put(JSONObject().put("type", it)) }
                 })
             } else if (enableMemory) {
                 put("tools", JSONArray().put(MEMORY_TOOL_SCHEMA))
@@ -238,8 +241,8 @@ class ChatRepository(
                 // 第二轮:带 tool 结果
                 messages.put(JSONObject().apply {
                     put("role", "assistant")
-                    put("content", msg.optString("content"))
-                    if (settings.thinkingEnabled) put("reasoning_content", msg.optString("reasoning_content"))
+                    put("content", JsonText.of(msg, "content"))
+                    if (declared.isNotEmpty()) put("reasoning_content", JsonText.of(msg, "reasoning_content"))
                     put("tool_calls", toolCalls)
                 })
                 for (i in 0 until toolResults.length()) messages.put(toolResults.get(i))

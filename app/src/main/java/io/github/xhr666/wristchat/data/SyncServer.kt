@@ -105,9 +105,23 @@ class SyncServer(
         }
     }
 
+    private var pinFails = 0
+    private var pinLockedUntil = 0L
+
     private fun checkPin(path: String): Boolean {
+        val now = System.currentTimeMillis()
+        if (now < pinLockedUntil) return false
         val p = path.substringAfter("pin=", "").substringBefore("&")
-        return p == pin
+        if (p == pin) {
+            pinFails = 0
+            return true
+        }
+        pinFails += 1
+        if (pinFails >= 5) {
+            pinLockedUntil = now + 300_000
+            pinFails = 0
+        }
+        return false
     }
 
     private fun handleConfig(path: String): String {
@@ -119,6 +133,9 @@ class SyncServer(
     private fun handleLogs(path: String): String {
         if (!checkPin(path)) return "PIN 错误:网址后加 ?pin=四位密钥"
         val name = path.removePrefix("/logs").trim('/').substringBefore('?')
+        if (name.isNotEmpty() && name != "all" && name != "crash" && name != "anr" && name != "app") {
+            return "未知日志"
+        }
         val lines = (path.substringAfter("lines=", "300").substringBefore("&").toIntOrNull() ?: 300).coerceIn(10, 5000)
         val pin = path.substringAfter("pin=", "").substringBefore("&")
         if (name.isEmpty() || name == "all") {

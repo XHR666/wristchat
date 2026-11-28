@@ -42,17 +42,9 @@ class DialogController {
         val old = spec
         if (old != null && old !== s) (old as? WSpec.Confirm)?.onCancel?.invoke()
         spec = s
-        runCatching { io.github.xhr666.wristchat.data.AppLog.i("dlg", "open ${s::class.simpleName}: ${s.title().take(10)}") }
+        runCatching { io.github.xhr666.wristchat.data.AppLog.i("dlg", "open ${s::class.simpleName}") }
     }
 
-    /** WSpec 标题(日志用) */
-    private fun WSpec.title(): String = when (this) {
-        is WSpec.Confirm -> title
-        is WSpec.Choice -> title
-        is WSpec.Input -> title
-        is WSpec.Items -> title
-        is WSpec.Text -> title
-    }
     fun confirm(t: String, m: String, ok: String = "确定", countdown: Int = 0, onCancel: () -> Unit = {}, onOk: () -> Unit) { show(WSpec.Confirm(t, m, ok, countdown = countdown, onOk = onOk, onCancel = onCancel)) }
     fun choice(t: String, items: List<String>, checked: Int, onPick: (Int) -> Unit) { show(WSpec.Choice(t, items, checked, onPick)) }
     fun input(t: String, init: String, pw: Boolean = false, ml: Boolean = false, ok: String = "保存", onOk: (String) -> Unit) { show(WSpec.Input(t, init, pw, ml, ok, onOk)) }
@@ -84,7 +76,7 @@ fun WDialogHost(d: DialogController) {
             val c = LocalWrist.current
             CompactDialog(title = s.title, onDismiss = { d.close(); s.onCancel() },
                 confirmText = s.ok, confirmEnabled = remain <= 0,
-                onConfirm = { d.close(); runCatching { s.onOk() }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e}"); d.text("出错", e.message ?: "操作异常") } },
+                onConfirm = { d.close(); runCatching { s.onOk() }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e.javaClass.simpleName}"); d.text("出错", e.message ?: "操作异常") } },
                 dismissText = s.cancel.takeIf { it.isNotEmpty() }) {
                 Text((if (remain > 0) "确定 ${remain}s 后可用\n\n" else "") + s.message,
                     color = c.text, fontSize = 13.sp, lineHeight = 18.sp,
@@ -92,7 +84,7 @@ fun WDialogHost(d: DialogController) {
             }
         }
         is WSpec.Choice -> CompactDialog(title = s.title, onDismiss = { d.close() }, dismissText = "取消") {
-            CompactRows(s.items, s.checked) { i -> d.close(); runCatching { s.onPick(i) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e}"); d.text("出错", e.message ?: "操作异常") } }
+            CompactRows(s.items, s.checked) { i -> d.close(); runCatching { s.onPick(i) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e.javaClass.simpleName}"); d.text("出错", e.message ?: "操作异常") } }
         }
         is WSpec.Input -> {
             // remember 以 spec 为 key:编辑 A 后再编辑 B 时输入框内容必须从 B 的 initial 重新开始
@@ -100,7 +92,7 @@ fun WDialogHost(d: DialogController) {
             // 之前用 String 时删除字符后 IME 预览不刷新。
             var v by remember(s) { mutableStateOf(s.initial) }
             CompactDialog(title = s.title, onDismiss = { d.close() },
-                confirmText = s.ok, onConfirm = { d.close(); runCatching { s.onOk(v) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e}"); d.text("出错", e.message ?: "操作异常") } }, dismissText = "取消") {
+                confirmText = s.ok, onConfirm = { d.close(); runCatching { s.onOk(v) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e.javaClass.simpleName}"); d.text("出错", e.message ?: "操作异常") } }, dismissText = "取消") {
                 NativeInput(
                     initial = s.initial,
                     password = s.password,
@@ -114,11 +106,11 @@ fun WDialogHost(d: DialogController) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 s.items.forEachIndexed { i, it ->
                     Text(it, color = c.text, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().clickable { d.close(); runCatching { s.onPick(i) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e}"); d.text("出错", e.message ?: "操作异常") } }.padding(vertical = 7.dp))
+                        modifier = Modifier.fillMaxWidth().clickable { d.close(); runCatching { s.onPick(i) }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e.javaClass.simpleName}"); d.text("出错", e.message ?: "操作异常") } }.padding(vertical = 7.dp))
                 }
                 s.neutral?.let { n ->
                     Text(n, color = c.accent, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().clickable { d.close(); runCatching { s.onNeutral?.invoke() }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e}"); d.text("出错", e.message ?: "操作异常") } }.padding(vertical = 7.dp))
+                        modifier = Modifier.fillMaxWidth().clickable { d.close(); runCatching { s.onNeutral?.invoke() }.onFailure { e -> io.github.xhr666.wristchat.data.AppLog.i("dlg", "err ${e.javaClass.simpleName}"); d.text("出错", e.message ?: "操作异常") } }.padding(vertical = 7.dp))
                 }
             }
         }

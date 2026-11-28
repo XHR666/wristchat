@@ -120,7 +120,7 @@ class SessionStore(private val context: Context) {
                     msgCount = msgs.length(),
                 ))
             } catch (e: Exception) {
-                AppLog.i("sess", "bad ${f.name}: ${e.message}")
+                AppLog.i("sess", "bad ${f.name}: ${e.javaClass.simpleName}")
             }
         }
         out.sortByDescending { it.updatedAt }

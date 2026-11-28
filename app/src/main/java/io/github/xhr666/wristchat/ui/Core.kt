@@ -160,6 +160,7 @@ fun ScreenScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     onHeaderSwipeBack: (() -> Unit)? = null,
     scrollIndicator: LazyListState? = null,
+    scrollFromEnd: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val c = LocalWrist.current
@@ -204,9 +205,8 @@ fun ScreenScaffold(
         }
         // 顶部弧形时间(官方 CurvedText:文字沿圆表上沿弧线排布)
         if (showClock) CurvedClock()
-        // 右侧小巧滚动进度条(仿 wear PositionIndicator,滚动时出现)
-        // Wear 官方 PositionIndicator(参考应用同款):短弧、自动淡入淡出、随滚动移动
-        scrollIndicator?.let { st -> SmallScrollIndicator(st) }
+        // 右侧短弧,贴着表圈。几何在 SmallScrollIndicator。
+        scrollIndicator?.let { st -> SmallScrollIndicator(st, scrollFromEnd) }
         }
         }
     }
@@ -235,73 +235,51 @@ private fun CurvedClock() {
 }
 
 /**
- * 右侧滚动进度条(对标微思商店:自定义 View + onScrollChanged + drawArc 的做法):
- * - 固定在屏幕右侧中点(3 点钟方向)附近,不沿弧线移动 → 不会"跳"
- * - 用弧长表示进度:进度越大,弧越长(最短 6°,最长 40°)
- * - 滚动时出现,停 900ms 后淡出
+ * 右侧短弧进度条,几何跟腕上星语一致:
+ * 轨道只有 44°,中心在 3 点钟,贴着圆边 5dp;滑块在这段里移动,没有又长又靠上的白弧。
  */
 @Composable
-private fun SmallScrollIndicator(state: LazyListState) {
-    val strokePx = with(LocalDensity.current) { 3.5.dp.toPx() }
-    val edgePx = with(LocalDensity.current) { 5.dp.toPx() }
-    var visible by remember { mutableStateOf(false) }
-    var activity by remember { mutableStateOf(0) }
-    val progressTarget = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    LaunchedEffect(state) {
-        snapshotFlow { state.layoutInfo }.collect { info ->
-            activity++
-            val first = info.visibleItemsInfo.firstOrNull() ?: return@collect
-            if (info.totalItemsCount <= 1) return@collect
-            val visibleCount = info.visibleItemsInfo.size.coerceAtLeast(1)
-            val scrollable = (info.totalItemsCount - visibleCount).coerceAtLeast(1)
-            val perItem = first.size.coerceAtLeast(1).toFloat()
-            val fraction = (info.viewportStartOffset - first.offset).toFloat() / perItem
-            progressTarget.floatValue = ((first.index + fraction) / scrollable).coerceIn(0f, 1f)
-        }
-    }
-    LaunchedEffect(activity) {
-        if (activity == 0) return@LaunchedEffect
-        visible = true
-        kotlinx.coroutines.delay(900)
-        visible = false
-    }
-    val smooth by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = progressTarget.floatValue,
-        animationSpec = androidx.compose.animation.core.tween(120),
-        label = "scrollIndicator",
-    )
+private fun SmallScrollIndicator(state: LazyListState, fromEnd: Boolean) {
+    val density = LocalDensity.current
+    val strokePx = with(density) { 2.dp.toPx() }
+    val edgePx = with(density) { 5.dp.toPx() }
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-        if (!visible) return@Canvas
+        val info = state.layoutInfo
+        val visibleItems = info.visibleItemsInfo
+        val total = info.totalItemsCount
+        if (visibleItems.isEmpty() || total <= visibleItems.size) return@Canvas
+        val first = visibleItems.first()
+        val per = first.size.coerceAtLeast(1).toFloat()
+        val into = ((info.viewportStartOffset - first.offset).toFloat() / per).coerceIn(0f, 1f)
+        val maxIndex = (total - visibleItems.size).coerceAtLeast(1).toFloat()
+        val raw = ((first.index + into) / maxIndex).coerceIn(0f, 1f)
+        val progress = if (fromEnd) 1f - raw else raw
+        val visibleRatio = visibleItems.size.toFloat() / total.toFloat()
+        val (thumbStart, thumbSweep) = RimScroll.thumb(progress, visibleRatio)
         val r = size.minDimension / 2f - edgePx
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        // 标准滚动条:滑块长度固定(按可见比例),位置随进度沿右边缘移动
-        val total = runCatching { state.layoutInfo.totalItemsCount }.getOrDefault(0)
-        val visible = runCatching { state.layoutInfo.visibleItemsInfo.size }.getOrDefault(0)
-        val span = 120f                                  // 右边缘可用角度 -60°..+60°
-        val thumb = if (total > 0) (span * visible / total).coerceIn(18f, 60f) else 30f
-        val sweep = thumb
-        val start = -span / 2f + smooth * (span - thumb)  // 位置随进度移动
-        // 固定轨道(整段长度不变)+ 内部滑块随进度移动
+        val left = size.width / 2f - r
+        val top = size.height / 2f - r
+        val arcSize = androidx.compose.ui.geometry.Size(r * 2, r * 2)
+        val origin = androidx.compose.ui.geometry.Offset(left, top)
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
+            width = strokePx, cap = androidx.compose.ui.graphics.StrokeCap.Round)
         drawArc(
-            color = Color.White.copy(alpha = 0.20f),
-            startAngle = -span / 2f,
-            sweepAngle = span,
+            color = Color(0xFF46464A),
+            startAngle = RimScroll.TRACK_START,
+            sweepAngle = RimScroll.TRACK_SWEEP,
             useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(cx - r, cy - r),
-            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                width = strokePx * 0.9f, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+            topLeft = origin,
+            size = arcSize,
+            style = stroke,
         )
         drawArc(
-            color = Color.White.copy(alpha = 0.9f),
-            startAngle = start,
-            sweepAngle = sweep,
+            color = Color(0xFFD7DCE1),
+            startAngle = thumbStart,
+            sweepAngle = thumbSweep,
             useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(cx - r, cy - r),
-            size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                width = strokePx, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+            topLeft = origin,
+            size = arcSize,
+            style = stroke,
         )
     }
 }
