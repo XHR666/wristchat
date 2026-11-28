@@ -79,8 +79,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                 if (!scrolling && listState.firstVisibleItemIndex == 0) stickToEnd = true
             }
     }
-    LaunchedEffect(sessionId, messages.size, frame) {
-        if (stickToEnd && messages.isNotEmpty()) listState.scrollToItem(0)
+    LaunchedEffect(sessionId, messages.size, frame, settings.autoScroll) {
+        if (settings.autoScroll && stickToEnd && messages.isNotEmpty()) listState.scrollToItem(0)
     }
 
     WToast(status)
@@ -114,7 +114,8 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                         .verticalScroll(androidx.compose.foundation.rememberScrollState())
                         .padding(vertical = 4.dp),
                 ) {
-                    quickInputs.forEach { q ->
+                    quickInputs.forEachIndexed { i, q ->
+                        if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
                         Text(q, color = c.text, fontSize = 13.sp, maxLines = 1,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -138,12 +139,21 @@ fun ChatScreen(settings: SettingsStore, vm: ChatViewModel) {
                     )
                 }
             }
+            val sending by vm.sending.observeAsState(false)
+            val tail = messages.lastOrNull()
+            if (!sending && tail != null && tail.role == "assistant" && tail.incomplete) {
+                Text("继续生成", color = c.accent, fontSize = 13.sp,
+                    modifier = Modifier
+                        .padding(start = 46.dp, bottom = 4.dp)
+                        .clickable { vm.continueLast() })
+            }
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 30.dp)
+                    .padding(start = 46.dp, end = 46.dp, bottom = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(c.surface)
-                    .border(1.dp, c.border)
+                    .border(1.dp, c.border, RoundedCornerShape(12.dp))
                     .clickable { fullscreenInput = true }
                     .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -221,9 +231,9 @@ fun MessageItem(
                         modifier = Modifier.padding(bottom = 2.dp))
                 }
                 if (m.content.isBlank() && m.reasoning.isBlank() && !isUser) {
-                    Text("思考中…", color = c.hint, fontSize = 12.sp)
+                    Text(if (streaming) "正在输出…" else "思考中…", color = c.hint, fontSize = 12.sp)
                 } else if (m.content.isNotBlank() || m.imgs.isEmpty()) {
-                    MsgContent(m.content, isUser, markwon, settings)
+                    MsgContent(m.content, isUser, markwon, settings, streaming = streaming && !isUser)
                 }
             }
         }
@@ -361,12 +371,16 @@ private fun MsgImage(name: String) {
 }
 
 @Composable
-fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: SettingsStore) {
+fun MsgContent(text: String, isUser: Boolean, markwon: Markwon, settings: SettingsStore, streaming: Boolean = false) {
     val c = LocalWrist.current
     val shown = if (!isUser && io.github.xhr666.wristchat.ui.chat.TextTransform.shouldReverse(settings.textRtl, text) &&
         !io.github.xhr666.wristchat.ui.chat.Latex.hasMath(text)) {
         io.github.xhr666.wristchat.ui.chat.TextTransform.reversePerLine(text)
     } else text
+    if (streaming) {
+        Text(shown, color = c.text, fontSize = 14.sp, lineHeight = 18.sp)
+        return
+    }
     val color = c.text.toArgbCompat()
     AndroidView(
         factory = { ctx2 ->

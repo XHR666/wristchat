@@ -48,17 +48,20 @@ object Http {
         userAgent: String = "",
         onLine: (String) -> Unit,
     ): Pair<Int, String> {
+        val bytes = body.toByteArray(Charsets.UTF_8)
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = CONNECT_TIMEOUT
             readTimeout = timeoutMs
             doOutput = true
+            setFixedLengthStreamingMode(bytes.size)
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "text/event-stream")
+            setRequestProperty("Accept-Encoding", "identity")
             if (userAgent.isNotBlank()) setRequestProperty("User-Agent", userAgent)
             bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
-        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        conn.outputStream.use { it.write(bytes) }
         val code = conn.responseCode
         if (code !in 200..299) {
             val err = conn.errorStream?.readAllBytesSafe() ?: ""

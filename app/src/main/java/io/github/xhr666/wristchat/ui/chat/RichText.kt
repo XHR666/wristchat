@@ -7,6 +7,7 @@ import android.text.style.ImageSpan
 import android.util.LruCache
 import android.widget.TextView
 import io.github.xhr666.wristchat.data.FormulaText
+import io.github.xhr666.wristchat.data.LatexBodies
 import io.github.xhr666.wristchat.data.StreamRender
 import io.noties.markwon.Markwon
 import ru.noties.jlatexmath.JLatexMathAndroid
@@ -17,9 +18,6 @@ import ru.noties.jlatexmath.JLatexMathDrawable
  * 流式输出时未闭合的符号留在末尾,原样显示。
  */
 object RichText {
-    private val math = Regex(
-        """\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}|\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?<!\$)\$(?!\$)[^\$\n]+?\$(?!\$)"""
-    )
     private val images = LruCache<String, JLatexMathDrawable>(24)
     @Volatile private var inited = false
 
@@ -63,34 +61,31 @@ object RichText {
         if (src.isEmpty()) return emptyList()
         val out = ArrayList<Seg>()
         var i = 0
-        for (m in math.findAll(src)) {
-            if (m.range.first > i) out += Seg.Md(src.substring(i, m.range.first))
-            out += Seg.Math(unwrap(m.value))
-            i = m.range.last + 1
+        for ((range, body) in LatexBodies.ranges(src)) {
+            if (range.first > i) out += Seg.Md(src.substring(i, range.first))
+            out += Seg.Math(body)
+            i = range.last + 1
         }
         if (i < src.length) out += Seg.Md(src.substring(i))
         return out
     }
 
-    private fun unwrap(raw: String): String = when {
-        raw.startsWith("$$") && raw.endsWith("$$") && raw.length >= 4 -> raw.substring(2, raw.length - 2)
-        raw.startsWith("\\[") && raw.endsWith("\\]") && raw.length >= 4 -> raw.substring(2, raw.length - 2)
-        raw.startsWith("\\(") && raw.endsWith("\\)") && raw.length >= 4 -> raw.substring(2, raw.length - 2)
-        raw.startsWith("$") && raw.endsWith("$") && raw.length >= 2 -> raw.substring(1, raw.length - 1)
-        else -> raw
-    }
-
     private fun formula(tv: TextView, latex: String, color: Int): JLatexMathDrawable? {
         val body = latex.trim()
         if (body.isEmpty() || body.length > 4096) return null
-        val key = body + "#" + color + "#" + tv.textSize.toInt()
+        val soft = LatexBodies.soften(body)
+        return build(tv, body, color) ?: if (soft != body) build(tv, soft, color) else null
+    }
+
+    private fun build(tv: TextView, latex: String, color: Int): JLatexMathDrawable? {
+        val key = latex + "#" + color + "#" + tv.textSize.toInt()
         images.get(key)?.let { return it }
         return try {
             if (!inited) {
                 JLatexMathAndroid.init(tv.context.applicationContext)
                 inited = true
             }
-            val drawable = JLatexMathDrawable.builder(body)
+            val drawable = JLatexMathDrawable.builder(latex)
                 .textSize(tv.textSize)
                 .color(color)
                 .padding(1, 0, 1, 0)

@@ -52,6 +52,12 @@ fun BalanceScreen(settings: SettingsStore) {
             contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 8.dp, bottom = LocalListBottomPad.current),
         ) {
             item {
+                val ago = if (updatedMillis <= 0L) "" else {
+                    val sec = ((tick - updatedMillis) / 1000).coerceAtLeast(0)
+                    "更新于 $updated（${sec}秒前）"
+                }
+                if (ago.isNotEmpty()) Text(ago, color = c.hint, fontSize = 11.sp,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp), textAlign = TextAlign.Center)
                 Text(ui?.peakLabel ?: "", color = c.text, fontSize = 12.sp, lineHeight = 16.sp,
                     modifier = Modifier.fillMaxWidth().background(c.surface, RoundedCornerShape(16.dp)).padding(10.dp))
             }
@@ -79,11 +85,6 @@ fun BalanceScreen(settings: SettingsStore) {
             item {
                 Text(ui?.hint ?: "", color = c.hint, fontSize = 10.sp, lineHeight = 14.sp,
                     modifier = Modifier.padding(top = 8.dp))
-                val ago = if (updatedMillis <= 0L) "" else {
-                    val sec = ((tick - updatedMillis) / 1000).coerceAtLeast(0)
-                    "更新于 $updated(${sec}秒前)"
-                }
-                Text(ago, color = c.hint, fontSize = 9.sp, modifier = Modifier.padding(top = 4.dp))
             }
         }
         RotaryList(listState, enabled = LocalCurrentPage.current == 2)

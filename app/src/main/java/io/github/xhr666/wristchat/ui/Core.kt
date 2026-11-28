@@ -88,31 +88,11 @@ object RotaryBus {
 fun RotaryList(listState: LazyListState, enabled: Boolean, sign: Int = 1) {
     LaunchedEffect(enabled, sign) {
         if (!enabled) return@LaunchedEffect
-        var velocity = 0f
-        var flingJob: kotlinx.coroutines.Job? = null
-        // 事件驱动:不再用 withFrameNanos 常驻循环(那会让界面持续出帧,白耗电)
-        // 先把订阅前积下的转动吃掉,否则第一格要等下一次才动
         val pending = RotaryBus.drain()
         if (pending != 0) listState.dispatchRawDelta((pending * sign).toFloat())
         RotaryBus.signals.collect {
-            flingJob?.cancel(); flingJob = null
             val px = RotaryBus.drain().coerceIn(-1200, 1200) * sign
-            if (px != 0) {
-                listState.dispatchRawDelta(px.toFloat())
-                velocity = 0.65f * velocity + 0.35f * (px / 16.7f)
-                flingJob = launch {
-                    kotlinx.coroutines.delay(110)
-                    val v = velocity
-                    velocity = 0f
-                    if (kotlin.math.abs(v) > 0.5f) {
-                        runCatching {
-                            listState.animateScrollBy((v * 150f).coerceIn(-1800f, 1800f),
-                                androidx.compose.animation.core.tween(
-                                    300, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
-                        }
-                    }
-                }
-            }
+            if (px != 0) listState.dispatchRawDelta(px.toFloat())
         }
     }
 }
@@ -323,11 +303,9 @@ fun SwipeBackContainer(onBack: () -> Unit, content: @Composable () -> Unit) {
             },
     ) {
         Box(Modifier.fillMaxSize().graphicsLayer {
-            val p = (offset.value / widthPx).coerceIn(0f, 1f)
-            translationX = offset.value * 0.55f
-            scaleX = 1f - 0.05f * p
-            scaleY = 1f - 0.05f * p
-            alpha = 1f - 0.22f * p
+            translationX = offset.value
+            shape = androidx.compose.foundation.shape.CircleShape
+            clip = true
         }) { content() }
     }
 }

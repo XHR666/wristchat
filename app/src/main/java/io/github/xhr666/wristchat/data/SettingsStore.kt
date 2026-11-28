@@ -35,8 +35,28 @@ class SettingsStore(context: Context) {
         set(v) = prefs.edit().putString(KEY_PROVIDER, v).apply()
 
     var apiKey: String
-        get() = Crypto.decrypt(prefs.getString(KEY_API_KEY, "") ?: "")
-        set(v) = prefs.edit().putString(KEY_API_KEY, Crypto.encrypt(v.trim())).apply()
+        get() = providerKey(providerId)
+        set(v) { setProviderKey(providerId, v) }
+
+    /** 每个服务商各自一把密钥。旧的单密钥记在当前服务商名下。 */
+    fun providerKey(id: String): String {
+        val raw = prefs.getString(KEY_PROVIDER_KEYS, "") ?: ""
+        if (raw.isNotBlank()) {
+            val o = runCatching { org.json.JSONObject(raw) }.getOrNull()
+            if (o != null && o.has(id)) return Crypto.decrypt(o.optString(id))
+        }
+        val current = prefs.getString(KEY_PROVIDER, PROVIDER_DEEPSEEK) ?: PROVIDER_DEEPSEEK
+        if (id == current) return Crypto.decrypt(prefs.getString(KEY_API_KEY, "") ?: "")
+        return ""
+    }
+
+    fun setProviderKey(id: String, value: String) {
+        val o = runCatching { org.json.JSONObject(prefs.getString(KEY_PROVIDER_KEYS, "") ?: "{}") }.getOrElse { org.json.JSONObject() }
+        o.put(id, Crypto.encrypt(value.trim()))
+        val ed = prefs.edit().putString(KEY_PROVIDER_KEYS, o.toString())
+        if (id == providerId) ed.putString(KEY_API_KEY, Crypto.encrypt(value.trim()))
+        ed.apply()
+    }
 
     var platformToken: String
         get() = Crypto.decrypt(prefs.getString(KEY_PLATFORM_TOKEN, "") ?: "")
@@ -142,6 +162,26 @@ class SettingsStore(context: Context) {
     var netTimeoutSec: Int
         get() = prefs.getInt(KEY_NET_TIMEOUT, 90).coerceIn(20, 180)
         set(v) = prefs.edit().putInt(KEY_NET_TIMEOUT, v.coerceIn(20, 180)).apply()
+
+    var retryCount: Int
+        get() = prefs.getInt(KEY_RETRY, 2).coerceIn(0, 5)
+        set(v) = prefs.edit().putInt(KEY_RETRY, v.coerceIn(0, 5)).apply()
+
+    var newSessionOnLaunch: Boolean
+        get() = prefs.getBoolean(KEY_NEW_ON_LAUNCH, false)
+        set(v) = prefs.edit().putBoolean(KEY_NEW_ON_LAUNCH, v).apply()
+
+    var autoCompress: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_COMPRESS, true)
+        set(v) = prefs.edit().putBoolean(KEY_AUTO_COMPRESS, v).apply()
+
+    var autoScroll: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_SCROLL, true)
+        set(v) = prefs.edit().putBoolean(KEY_AUTO_SCROLL, v).apply()
+
+    var crownHaptic: Boolean
+        get() = prefs.getBoolean(KEY_CROWN_HAPTIC, false)
+        set(v) = prefs.edit().putBoolean(KEY_CROWN_HAPTIC, v).apply()
 
     /** 文字对齐:left / center / right */
     var textAlignMode: String
@@ -388,6 +428,12 @@ Requirements:
         private const val KEY_CODE_WRAP = "code_wrap"
         private const val KEY_UA = "user_agent"
         private const val KEY_NET_TIMEOUT = "net_timeout_sec"
+        private const val KEY_RETRY = "retry_count"
+        private const val KEY_NEW_ON_LAUNCH = "new_on_launch"
+        private const val KEY_AUTO_COMPRESS = "auto_compress"
+        private const val KEY_AUTO_SCROLL = "auto_scroll"
+        private const val KEY_CROWN_HAPTIC = "crown_haptic"
+        private const val KEY_PROVIDER_KEYS = "provider_keys"
         private const val KEY_TEXT_ALIGN = "text_align"
         private const val KEY_TEXT_RTL = "text_rtl"
         private const val KEY_MSG_SWAP = "message_swap"

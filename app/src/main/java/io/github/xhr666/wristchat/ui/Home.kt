@@ -3,6 +3,7 @@ package io.github.xhr666.wristchat.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
@@ -11,6 +12,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import io.github.xhr666.wristchat.WristChatApp
 import io.github.xhr666.wristchat.data.SettingsStore
@@ -103,6 +105,18 @@ fun HomePager(settings: SettingsStore) {
                 }.getOrNull()
             }
             if (!found.isNullOrBlank()) io.github.xhr666.wristchat.data.Notices.updateReady(app, found)
+        }
+        var warm by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay(900)
+            warm = true
+        }
+        if (warm) {
+            Box(Modifier.size(0.dp)) {
+                SessionsScreen(settings, chatVm) {}
+                BalanceScreen(settings)
+                SettingsMenuScreen(settings)
+            }
         }
     }
 }

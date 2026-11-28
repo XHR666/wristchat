@@ -269,13 +269,34 @@ class EngineeringRulesTest {
         assertEquals("", ToolTrace.line("nope", emptyList(), "", false))
     }
 
-    @Test fun `U1 设置根目录有搜索和备份且不含颜色模式`() {
+    @Test fun `U1 设置根目录有分组标题且不含颜色模式`() {
         val titles = io.github.xhr666.wristchat.ui.SettingsCatalog.root.map { it.title }
-        assertEquals("偏好设置", titles.first())
+        assertEquals("通用设置", titles.first())
         assertTrue(titles.contains("搜索服务"))
         assertTrue(titles.contains("数据备份"))
         assertFalse(titles.any { it.contains("颜色") })
         assertTrue(titles.indexOf("提供商") < titles.indexOf("搜索服务"))
+    }
+
+    @Test fun `N2 连接失败才会重试`() {
+        assertTrue(io.github.xhr666.wristchat.data.NetRetry.again(500, 0, 2))
+        assertTrue(io.github.xhr666.wristchat.data.NetRetry.again(0, 0, 2))
+        assertFalse(io.github.xhr666.wristchat.data.NetRetry.again(400, 0, 2))
+        assertFalse(io.github.xhr666.wristchat.data.NetRetry.again(500, 2, 2))
+    }
+
+    @Test fun `L3 公式环境能被抽出来`() {
+        val bodies = io.github.xhr666.wristchat.data.LatexBodies.extract("见 \\[a+b\\] 和 \$x\$")
+        assertEquals(2, bodies.size)
+        assertEquals("a+b", bodies[0])
+        val soft = io.github.xhr666.wristchat.data.LatexBodies.soften("\\begin{align*} a &= b \\end{align*}")
+        assertTrue(soft.contains("aligned"))
+        assertFalse(soft.contains("align*"))
+    }
+
+    @Test fun `K1 有密钥的服务商名字带标记`() {
+        assertEquals("DeepSeek（有 API Key）", io.github.xhr666.wristchat.data.ProviderLabel.of("DeepSeek", true))
+        assertEquals("通义千问", io.github.xhr666.wristchat.data.ProviderLabel.of("通义千问", false))
     }
 
     @Test fun `S2 收起后偏移不会跳到下一项`() {

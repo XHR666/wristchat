@@ -82,7 +82,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _draft.value = io.github.xhr666.wristchat.data.DraftStore.load(app)
         _quickInputs.value = settings.getQuickInputs()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val s = sessionStore.latest() ?: sessionStore.create()
+            val s = if (settings.newSessionOnLaunch) sessionStore.create()
+                else sessionStore.latest() ?: sessionStore.create()
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 _session.value = s
                 _title.value = s.title
@@ -327,17 +328,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val history = s.messages.filter { it !== userMsg && it.ts != aiTs }
             val updates = Channel<Triple<String, String, String>>(Channel.CONFLATED)
             val paint = launch(kotlinx.coroutines.Dispatchers.Main) {
+                var n = 0
                 for ((c, r, note) in updates) {
                     if (r.isNotEmpty() && thinkStart == 0L) {
                         thinkStart = System.currentTimeMillis()
                         _thinkStart.value = thinkStart
                     }
-                    replaceAssistant(s, aiTs, c, r, null, 0.0, toolNote = note)
+                    replaceAssistant(s, aiTs, c, r, null, 0.0, toolNote = note, incomplete = true)
+                    if (n++ % 6 == 0) sessionStore.save(s)
                 }
             }
             val result = repo.chat(history, trimmed, imageFiles = imageFiles,
                 enableMemory = settings.memoryAuto && settings.providerId == SettingsStore.PROVIDER_DEEPSEEK,
                 modelOverride = modelOverride,
+                onStatus = { _status.value = it },
                 onPartial = { c, r, note -> updates.trySend(Triple(c, r, note)) })
             updates.close()
             paint.join()
@@ -346,7 +350,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val elapsed = if (thinkStart == 0L) 0L else System.currentTimeMillis() - thinkStart
                     replaceAssistant(s, aiTs, result.content, result.reasoning, result.usage, result.cost,
                         reasoningMs = elapsed, serverTools = result.serverToolCalls, citations = result.citations,
-                        toolNote = result.toolNote)
+                        toolNote = result.toolNote, incomplete = false)
                     sessionStore.reconcile(s)
                     sessionStore.save(s)
                     bump()
@@ -365,7 +369,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val i = s.messages.indexOfLast { it.ts == aiTs }
                     val prior = if (i >= 0) s.messages[i].content else ""
                     val text = if (prior.isBlank()) "⚠️ ${result.message}" else prior + "\n⚠️ ${result.message}"
-                    replaceAssistant(s, aiTs, text, if (i >= 0) s.messages[i].reasoning else "", null, 0.0)
+                    replaceAssistant(s, aiTs, text, if (i >= 0) s.messages[i].reasoning else "", null, 0.0,
+                        incomplete = prior.isNotBlank())
                     sessionStore.save(s)
                     bump()
                 }
@@ -379,6 +384,46 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    /** 把没写完的那条接着生成。应用被划掉之后，未完成标记还在，打开就能继续。 */
+    fun continueLast() {
+        if (_sending.value == true) return
+        val s = _session.value ?: return
+        val last = s.messages.lastOrNull() ?: return
+        if (last.role != "assistant" || !last.incomplete) return
+        val partial = last.content.substringBefore("\n⚠️")
+        val history = s.messages.dropLast(1)
+        _sending.value = true
+        _streamingTs.value = last.ts
+        viewModelScope.launch {
+            val updates = Channel<String>(Channel.CONFLATED)
+            val paint = launch(kotlinx.coroutines.Dispatchers.Main) {
+                for (extra in updates) {
+                    replaceAssistant(s, last.ts, partial + extra, last.reasoning, null, 0.0, incomplete = true)
+                }
+            }
+            val result = repo.continuePartial(history, partial, onStatus = { _status.value = it }) { extra ->
+                updates.trySend(extra)
+            }
+            updates.close()
+            paint.join()
+            when (result) {
+                is ChatResult.Success -> {
+                    val text = if (result.content.isBlank()) partial else partial + result.content
+                    replaceAssistant(s, last.ts, text, last.reasoning, result.usage, result.cost, incomplete = false)
+                    sessionStore.save(s)
+                    _status.value = null
+                }
+                is ChatResult.Error -> {
+                    _status.value = result.message
+                    replaceAssistant(s, last.ts, partial, last.reasoning, null, 0.0, incomplete = true)
+                    sessionStore.save(s)
+                }
+            }
+            _sending.value = false
+            _streamingTs.value = 0L
+        }
+    }
+
     private fun bump() {
         _frame.value = (_frame.value ?: 0) + 1
     }
@@ -387,6 +432,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         s: Session, ts: Long, content: String, reasoning: String,
         usage: TokenUsage?, cost: Double,
         reasoningMs: Long = 0, serverTools: String = "", citations: String = "", toolNote: String = "",
+        incomplete: Boolean? = null,
     ) {
         val i = s.messages.indexOfLast { it.ts == ts && it.role == "assistant" }
         val prev = if (i >= 0) s.messages[i] else null
@@ -396,6 +442,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             serverToolCalls = serverTools.ifBlank { prev?.serverToolCalls.orEmpty() },
             citations = citations.ifBlank { prev?.citations.orEmpty() },
             toolNote = toolNote.ifBlank { prev?.toolNote.orEmpty() },
+            incomplete = incomplete ?: prev?.incomplete ?: false,
             ts = ts, usage = usage, cost = cost,
         )
         if (i >= 0) s.messages[i] = msg else s.messages.add(msg)
@@ -433,6 +480,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun maybeCompress(s: Session) {
+        if (!settings.autoCompress) return
         val lastUsage = s.messages.lastOrNull { it.usage != null }?.usage
         val projected = (lastUsage?.promptTokens ?: 0) + estimateTokens(s.messages.lastOrNull()?.content ?: "")
         val threshold = settings.contextWindow * settings.compressThreshold / 100

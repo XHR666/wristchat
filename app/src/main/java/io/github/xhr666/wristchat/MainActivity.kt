@@ -69,6 +69,9 @@ class MainActivity : ComponentActivity() {
                     val factor = android.view.ViewConfiguration.get(this).scaledVerticalScrollFactor
                     // 向下转表冠 = 内容向下走。覆盖层只换轴、不取反,这里补上方向。
                     RotaryBus.emit((-v * factor).toInt())
+                    if (settings.crownHaptic) {
+                        CnWearOverlay.performHapticFeedback(window.decorView, CnWearOverlay.getScrollTick())
+                    }
                     return true
                 }
             }

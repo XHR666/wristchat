@@ -4,14 +4,17 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
@@ -35,8 +38,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 private val CATS = SettingsCatalog.root
-private val CAT_TITLE = CATS.associate { it.key to it.title } +
-    mapOf("mp_models" to "默认模型", "mp_prompts" to "提示词",
+private val CAT_TITLE = SettingsCatalog.entries.associate { it.key to it.title } +
+    mapOf("mp_models" to "默认模型", "mp_prompts" to "提示词", "pref_model" to "模型参数",
         "pref_ui" to "界面", "pref_theme" to "主题", "pref_notify" to "通知",
         "pref_general" to "常规", "pref_net" to "网络", "quick" to "输入设置")
 
@@ -72,8 +75,14 @@ fun SettingsMenuScreen(settings: SettingsStore) {
                         top = LocalListCenterPad.current,
                         bottom = LocalListBottomPad.current),
                 ) {
-                    itemsIndexed(CATS) { _, cat ->
-                        WCard(cat.title, cat.desc) { openCat = cat.key }
+                    items(CATS.size) { i ->
+                        when (val row = CATS[i]) {
+                            is SettingsCatalog.Row.Head -> Text(
+                                row.title, color = LocalWrist.current.hint, fontSize = 11.sp,
+                                modifier = Modifier.padding(start = 6.dp, top = 10.dp, bottom = 2.dp),
+                            )
+                            is SettingsCatalog.Row.Entry -> WCard(row.title, row.desc) { openCat = row.key }
+                        }
                     }
                 }
             }
@@ -105,6 +114,7 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                 actions = { SmallAction("‹") { onBack() } },
                 onHeaderSwipeBack = onBack,
                 scrollIndicator = if (!syncOpen && logPage == null) listState else null) {
+                androidx.compose.runtime.key(settings.rev) {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 18.dp, end = 18.dp,
@@ -131,10 +141,12 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                         "pref_theme" -> themePrefRows(settings, dialogs)
                         "pref_notify" -> notifyRows(settings, dialogs)
                         "pref_general" -> generalRows(settings, dialogs) { subPage = it }
+                        "pref_model" -> modelParamRows(settings, dialogs)
                         "pref_net" -> netRows(settings, dialogs)
                         "mp_models" -> defaultModelRows(settings, dialogs)
                         "mp_prompts" -> promptRows(settings, dialogs)
                     }
+                }
                 }
                 RotaryList(listState, enabled = LocalCurrentPage.current == 3 && !syncOpen && logPage == null)
             }
@@ -154,7 +166,12 @@ fun CategoryScreen(settings: SettingsStore, vm: SettingsViewModel, cat: String, 
                 load = when (t) {
                     "crash" -> { { app.crashLogText() } }
                     "anr" -> { { app.anrLogText() } }
-                    else -> { { io.github.xhr666.wristchat.data.AppLog.read() } }
+                    "sess" -> { { sessionSelfCheck(app) } }
+                    else -> { {
+                        io.github.xhr666.wristchat.data.AppLog.read().lineSequence()
+                            .filter { line -> !line.contains("katex") && !line.contains("marked.min.js") }
+                            .joinToString("\n").ifBlank { "(空)" }
+                    } }
                 },
                 onBack = { logPage = null },
             )
@@ -220,7 +237,9 @@ private fun LazyListScope.notifyRows(s: SettingsStore, d: DialogController) {
             else if (android.os.Build.VERSION.SDK_INT >= 33 &&
                 androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                d.confirm("即将离开", "将向系统申请通知权限", ok = "继续") {
+                    launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
             } else s.notifyUpdate = true
         }
     }
@@ -234,7 +253,9 @@ private fun LazyListScope.notifyRows(s: SettingsStore, d: DialogController) {
             else if (android.os.Build.VERSION.SDK_INT >= 33 &&
                 androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                d.confirm("即将离开", "将向系统申请通知权限", ok = "继续") {
+                    launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
             } else s.notifyReply = true
         }
     }
@@ -246,6 +267,20 @@ private fun LazyListScope.notifyRows(s: SettingsStore, d: DialogController) {
 
 private fun LazyListScope.generalRows(s: SettingsStore, d: DialogController, openSub: (String) -> Unit) {
     s.rev
+    item { WToggle("启动时新建会话", s.newSessionOnLaunch) { s.newSessionOnLaunch = it } }
+    item { WToggle("自动压缩上下文", s.autoCompress) { s.autoCompress = it } }
+    if (s.autoCompress) {
+        item { WCard("自动压缩阈值", "${s.compressThreshold}%") {
+            d.num("压缩阈值(50-95)", s.compressThreshold.toFloat(), 50f, 95f) { s.compressThreshold = it.toInt() }
+        } }
+    }
+    item { WToggle("自动滚动", s.autoScroll) { s.autoScroll = it } }
+    item { WToggle("表冠滚动震动", s.crownHaptic) { s.crownHaptic = it } }
+    item { WCard("快捷输入", "逐条管理") { openSub("quick") } }
+}
+
+private fun LazyListScope.modelParamRows(s: SettingsStore, d: DialogController) {
+    s.rev
     item { WToggle("思考模式", s.thinkingEnabled) { s.thinkingEnabled = it } }
     item { WCard("思考强度", s.reasoningEffort) { val o = listOf("low", "high", "max")
         d.choice("思考强度", o, o.indexOf(s.reasoningEffort).coerceAtLeast(0)) { i -> s.reasoningEffort = o[i] } } }
@@ -254,38 +289,39 @@ private fun LazyListScope.generalRows(s: SettingsStore, d: DialogController, ope
     item { WCard("最大输出 tokens", if (s.maxTokens <= 0) "不限制" else s.maxTokens.toString()) {
         d.num("max tokens(0=不限制)", s.maxTokens.toFloat(), 0f, 65536f) { s.maxTokens = it.toInt() } } }
     item { WCard("上下文窗口", s.contextWindow.toString()) { d.num("上下文窗口", s.contextWindow.toFloat(), 10000f, 2000000f) { s.contextWindow = it.toInt() } } }
-    item { WCard("压缩阈值 %", "${s.compressThreshold}%") { d.num("压缩阈值(50-95)", s.compressThreshold.toFloat(), 50f, 95f) { s.compressThreshold = it.toInt() } } }
     item { WToggle("自动生成会话标题", s.autoTitle) { s.autoTitle = it } }
-    item { WCard("输入设置", "快捷输入") { openSub("quick") } }
 }
 
 private fun LazyListScope.netRows(s: SettingsStore, d: DialogController) {
     s.rev
-    item { WCard("User-Agent", s.userAgent.ifBlank { "WristChat" }) {
-        d.input("User-Agent", s.userAgent) { s.userAgent = it }
+    item { WCard("失败后自动重试", "${s.retryCount} 次") {
+        d.num("重试次数(0-5)", s.retryCount.toFloat(), 0f, 5f) { s.retryCount = it.toInt() }
     } }
-    item { WCard("请求超时(秒)", s.netTimeoutSec.toString()) {
-        d.num("超时(20-180)", s.netTimeoutSec.toFloat(), 20f, 180f) { s.netTimeoutSec = it.toInt() }
-    } }
+    item { WCard("说明", "连接失败或服务暂时不可用时，按这个次数再请求。对话页会显示正在重连和第几次。") }
 }
 
 private fun LazyListScope.searchRows(s: SettingsStore, d: DialogController) {
     s.rev
+    item { WCard("搜索服务", "DeepSeek") {
+        d.choice("搜索服务", listOf("DeepSeek"), 0) { }
+    } }
+    item {
+        val has = s.providerKey(SettingsStore.PROVIDER_DEEPSEEK).isNotBlank()
+        WCard("API Key", if (has) "使用提供商里 DeepSeek 的密钥" else "提供商里还没有 DeepSeek 的密钥")
+    }
     item { WToggle("联网搜索", s.webSearch) { s.webSearch = it } }
     item { WToggle("阅读消息里的链接", s.webRead) { s.webRead = it } }
     item {
-        val flash = s.model == "deepseek-flash"
-        WCard("聊天模型", if (flash) "deepseek-flash" else "${s.model} · 搜索要用 deepseek-flash") {
-            if (!flash) s.model = "deepseek-flash"
-        }
+        val on = s.providerId == SettingsStore.PROVIDER_DEEPSEEK
+        WCard("当前", if (on) "这一轮会带上搜索" else "当前服务商不是 DeepSeek，这一轮不搜索")
     }
-    item { WCard("说明", "搜索或阅读开着时，这一轮用 deepseek-flash，并在 tools 里声明 deepseek_web_search / deepseek_read_url。模型自己决定要不要搜。它报“工具列表里没有搜索”是因为这是服务端工具，不是函数。真正搜的时候，回复上方会写出搜索内容。") }
 }
 
 /** 默认模型与提示词:两个入口 */
 private fun LazyListScope.modelsPromptsRows(s: SettingsStore, d: DialogController, openSub: (String) -> Unit) {
     item { WCard("默认模型", "聊天 / 快速 / 标题 / 翻译 / OCR / 压缩") { openSub("mp_models") } }
-    item { WCard("提示词", "翻译 / 标题 / OCR / 压缩(可改,可恢复默认)") { openSub("mp_prompts") } }
+    item { WCard("模型参数", "思考 / 温度 / 输出长度") { openSub("pref_model") } }
+    item { WCard("提示词", "系统提示词 / 翻译 / 标题 / OCR / 压缩") { openSub("mp_prompts") } }
     item { WCard("说明", "每类任务各用一个模型;提示词里的 {变量} 会被自动替换") }
 }
 
@@ -318,6 +354,15 @@ private fun LazyListScope.defaultModelRows(s: SettingsStore, d: DialogController
 
 /** 四段提示词 */
 private fun LazyListScope.promptRows(s: SettingsStore, d: DialogController) {
+    item {
+        val cur = s.systemPrompt.ifBlank { s.customPrompt }
+        WCard("系统提示词", if (cur.isBlank()) "未设置" else "已设置") {
+            d.input("系统提示词", cur, ml = true) {
+                s.systemPrompt = it
+                s.customPrompt = ""
+            }
+        }
+    }
     item { WCard("翻译提示词", "变量:{source_text} {target_lang}") { d.input("翻译提示词", s.promptTranslate, ml = true) { s.promptTranslate = it } } }
     item { WCard("标题生成提示词", "变量:{content} {locale}") { d.input("标题生成提示词", s.promptTitle, ml = true) { s.promptTitle = it } } }
     item { WCard("OCR 识别提示词", "变量:{images}") { d.input("OCR 识别提示词", s.promptOcr, ml = true) { s.promptOcr = it } } }
@@ -330,7 +375,9 @@ private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
     s.rev
     item { WCard("服务商", Providers.byId(s.providerId).name) {
         val ids = listOf("deepseek", "qwen", "glm", "kimi", "volcano", "custom")
-        d.choice("服务商", ids.map { Providers.byId(it).name }, ids.indexOf(s.providerId).coerceAtLeast(0)) { i ->
+        d.choice("服务商", ids.map { id ->
+            ProviderLabel.of(Providers.byId(id).name, s.providerKey(id).isNotBlank())
+        }, ids.indexOf(s.providerId).coerceAtLeast(0)) { i ->
             s.providerId = ids[i]
             if (ids[i] != "custom") { val p = Providers.byId(ids[i]); s.baseUrl = p.defaultBaseUrl; s.apiPath = p.defaultPath }
         }
@@ -353,17 +400,14 @@ private fun LazyListScope.serviceRows(s: SettingsStore, d: DialogController) {
 
 private fun LazyListScope.assistantRows(s: SettingsStore, vm: SettingsViewModel, d: DialogController) {
     s.rev
-    item { WCard("系统提示词", if (s.systemPrompt.isBlank()) "未设置" else "已设置") {
-        d.input("系统提示词", s.systemPrompt, ml = true) { s.systemPrompt = it } } }
-    item { WCard("自定义提示词", if (s.customPrompt.isBlank()) "未设置" else "已设置") {
-        d.input("自定义提示词", s.customPrompt, ml = true) { s.customPrompt = it } } }
     item { WToggle("自动记忆", s.memoryAuto) { s.memoryAuto = it } }
-    item { val mems = vm.memoryStore.list()
-        WCard("记忆(${mems.size})", if (mems.isEmpty()) "(空)" else "点击删除") {
-            if (mems.isEmpty()) { d.text("记忆", "暂无记忆"); return@WCard }
-            d.items("记忆(点击删除)", mems.map { "${it.id}: ${it.content.take(30)}" }, { i -> vm.deleteMemory(mems[i].id) },
-                neutral = "清空全部") { vm.clearMemories() }
+    item {
+        val mems = vm.memoryStore.list()
+        var open by remember { mutableStateOf(false) }
+        WCard("记忆", if (mems.isEmpty()) "(空)" else "${mems.size} 条") {
+            if (mems.isEmpty()) d.text("记忆", "暂无记忆") else open = true
         }
+        if (open) MemoryDialog(vm) { open = false }
     }
 }
 
@@ -399,7 +443,9 @@ private fun LazyListScope.skillRows(s: SettingsStore, vm: SettingsViewModel, d: 
                 vm.importSkill(name, content); d.text("导入", "已导入技能:$name")
             }.onFailure { d.text("导入失败", it.message ?: "") }
         }
-        WCard("导入技能文件", "需系统文件选择器") { importer.launch(arrayOf("*/*")) }
+        WCard("导入技能文件", "需系统文件选择器") {
+            d.confirm("即将离开", "将打开系统文件选择", ok = "继续") { importer.launch(arrayOf("*/*")) }
+        }
     }
     item { WCard("刷新扫描", vm.skillsSummary()) { vm.refreshSkillPrompt(); d.text("扫描", "已扫描 ${vm.skillStore.scan().size} 个技能") } }
     item { WCard("技能管理", "点击切换启用") {
@@ -428,7 +474,9 @@ private fun LazyListScope.sessionRows(s: SettingsStore, vm: SettingsViewModel, d
                 }
             }.onFailure { d.text("导入失败", it.message ?: "") }
         }
-        WCard("导入聊天记录", "JSON / chatbox / 文本") { importer.launch(arrayOf("*/*")) }
+        WCard("导入聊天记录", "JSON / chatbox / 文本") {
+            d.confirm("即将离开", "将打开系统文件选择", ok = "继续") { importer.launch(arrayOf("*/*")) }
+        }
     }
     item { val briefs = vm.sessionStore.briefs()
         WCard("会话列表", "${briefs.size} 个 · ${vm.sessionsSize.value}") {
@@ -694,7 +742,57 @@ private fun LazyListScope.aboutRows(s: SettingsStore, vm: SettingsViewModel, d: 
     item {
         val ctx = LocalContext.current
         WCard("开源仓库", "github.com/XHR666/wristchat") {
-            ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/XHR666/wristchat")))
+            d.confirm("即将离开", "将打开浏览器", ok = "继续") {
+                ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/XHR666/wristchat")))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MemoryDialog(vm: SettingsViewModel, onClose: () -> Unit) {
+    var tick by remember { mutableIntStateOf(0) }
+    val mems = remember(tick) { vm.memoryStore.list() }
+    var focus by remember { mutableStateOf<io.github.xhr666.wristchat.data.MemoryItem?>(null) }
+    var deleting by remember { mutableStateOf(false) }
+    val c = LocalWrist.current
+    val title = when {
+        deleting && focus != null -> "删除记忆"
+        focus != null -> "记忆详情"
+        else -> "记忆"
+    }
+    CompactDialog(title = title, onDismiss = onClose, dismissText = "返回", onDismissButton = {
+        when {
+            deleting -> deleting = false
+            focus != null -> focus = null
+            else -> onClose()
+        }
+    }) {
+        val scroll = LocalDialogScroll.current ?: androidx.compose.foundation.rememberScrollState()
+        when {
+            deleting && focus != null -> Column(Modifier.verticalScroll(scroll)) {
+                Text(focus!!.content, color = c.text, fontSize = 13.sp)
+                Text("删除记忆", color = c.accent, fontSize = 15.sp,
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        vm.deleteMemory(focus!!.id)
+                        focus = null
+                        deleting = false
+                        tick++
+                    }.padding(vertical = 10.dp))
+            }
+            focus != null -> Text(focus!!.content, color = c.text, fontSize = 13.sp,
+                modifier = Modifier.verticalScroll(scroll))
+            else -> Column(Modifier.verticalScroll(scroll)) {
+                mems.forEachIndexed { i, m ->
+                    if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+                    Text(m.content, color = c.text, fontSize = 13.sp, maxLines = 3,
+                        modifier = Modifier.fillMaxWidth().combinedClickable(
+                            onClick = { focus = m; deleting = false },
+                            onLongClick = { focus = m; deleting = true },
+                        ).padding(vertical = 8.dp))
+                }
+            }
         }
     }
 }

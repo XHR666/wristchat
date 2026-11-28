@@ -82,6 +82,7 @@ class ChatRepository(
         enableMemory: Boolean,
         modelOverride: String? = null,
         onPartial: ((content: String, reasoning: String, toolNote: String) -> Unit)? = null,
+        onStatus: ((String) -> Unit)? = null,
     ): ChatResult {
         val provider = Providers.resolve(settings)
         val apiKey = settings.apiKey
@@ -192,11 +193,9 @@ class ChatRepository(
             AppLog.i("api", apiLine(model, declared, code, liveNote.isNotBlank()))
         } else {
             val acc = StreamAccum()
-            val (code, err) = try {
-                withContext(Dispatchers.IO) {
-                    Http.postJsonStream(url, body.toString(), apiKey, timeoutMs = timeoutMs, userAgent = userAgent) { line ->
-                        val ev = SseEvents.parseLine(line) ?: return@postJsonStream
-                        if (ev.done) return@postJsonStream
+            val (code, err) = streamWithRetry(url, body.toString(), apiKey, timeoutMs, userAgent, onStatus) { line ->
+                        val ev = SseEvents.parseLine(line) ?: return@streamWithRetry
+                        if (ev.done) return@streamWithRetry
                         if (ev.content.isNotEmpty()) acc.content.append(ev.content)
                         if (ev.reasoning.isNotEmpty()) acc.reasoning.append(ev.reasoning)
                         ev.usage?.let { acc.usage = it }
@@ -205,10 +204,6 @@ class ChatRepository(
                         if (step.isNotEmpty()) acc.addNote(step)
                         onPartial.invoke(acc.content.toString(), acc.reasoning.toString(), acc.toolNote())
                     }
-                }
-            } catch (e: Exception) {
-                return ChatResult.Error("网络错误:${e.message}")
-            }
             if (code !in 200..299) {
                 AppLog.i("api", apiLine(model, declared, code, false))
                 return ChatResult.Error(parseError(code, err), code)
@@ -315,6 +310,63 @@ class ChatRepository(
             citations = citationsOf(msg),
             toolNote = liveNote,
         )
+    }
+
+    private suspend fun streamWithRetry(
+        url: String, body: String, apiKey: String, timeoutMs: Int, userAgent: String,
+        onStatus: ((String) -> Unit)?,
+        onLine: (String) -> Unit,
+    ): Pair<Int, String> {
+        val extra = settings.retryCount.coerceIn(0, 5)
+        var attempt = 0
+        while (true) {
+            if (attempt > 0) onStatus?.invoke("正在重连 ($attempt/$extra)")
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    Http.postJsonStream(url, body, apiKey, timeoutMs, userAgent, onLine)
+                }
+            } catch (e: Exception) {
+                if (NetRetry.again(0, attempt, extra)) { attempt++; continue }
+                return 0 to (e.message ?: "网络错误")
+            }
+            if (!NetRetry.again(result.first, attempt, extra)) return result
+            attempt++
+        }
+    }
+
+    /**
+     * 半截回复接着写。DeepSeek 用 beta 的 prefix。返回的是新增的那一段。
+     */
+    suspend fun continuePartial(
+        history: List<ChatMessage>,
+        partial: String,
+        onStatus: ((String) -> Unit)? = null,
+        onPartial: (String) -> Unit,
+    ): ChatResult {
+        val provider = Providers.resolve(settings)
+        val apiKey = settings.apiKey
+        if (apiKey.isBlank()) return ChatResult.Error("请先在设置中填写 API Key")
+        val base = provider.defaultBaseUrl.trimEnd('/')
+        val url = if (settings.providerId == SettingsStore.PROVIDER_DEEPSEEK) "$base/beta/chat/completions"
+        else base + provider.defaultPath
+        val safe = ApiTranscript.prepare(history)
+        val messages = JSONArray()
+        safe.forEach { m -> messages.put(JSONObject().put("role", m.role).put("content", m.content)) }
+        messages.put(JSONObject().put("role", "assistant").put("content", partial).put("prefix", true))
+        val body = JSONObject()
+            .put("model", if (settings.providerId == SettingsStore.PROVIDER_DEEPSEEK) "deepseek-flash" else settings.model)
+            .put("messages", messages)
+            .put("stream", true)
+        val acc = StringBuilder()
+        val (code, err) = streamWithRetry(url, body.toString(), apiKey, settings.netTimeoutSec * 1000, settings.userAgent, onStatus) { line ->
+            val ev = SseEvents.parseLine(line) ?: return@streamWithRetry
+            if (ev.content.isNotEmpty()) {
+                acc.append(ev.content)
+                onPartial(acc.toString())
+            }
+        }
+        if (code !in 200..299) return ChatResult.Error(if (err.isBlank()) "继续生成失败" else parseError(code, err), code)
+        return ChatResult.Success(content = acc.toString(), reasoning = "", usage = TokenUsage(), cost = 0.0, model = settings.model)
     }
 
     /** 只记模型、声明了哪些工具、状态码。不记正文、链接和密钥。 */

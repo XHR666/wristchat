@@ -16,6 +16,7 @@ data class ChatMessage(
     val serverToolCalls: String = "",
     val citations: String = "",
     val toolNote: String = "",
+    val incomplete: Boolean = false,
     val ts: Long = System.currentTimeMillis(),
     val usage: TokenUsage? = null,
     val cost: Double = 0.0,
@@ -150,6 +151,7 @@ class SessionStore(private val context: Context) {
                     serverToolCalls = m.optString("serverToolCalls"),
                     citations = m.optString("citations"),
                     toolNote = m.optString("toolNote"),
+                    incomplete = m.optBoolean("incomplete"),
                     ts = m.optLong("ts"),
                     usage = m.optJSONObject("usage")?.let { u ->
                         TokenUsage(
@@ -217,6 +219,7 @@ class SessionStore(private val context: Context) {
                     if (m.serverToolCalls.isNotBlank()) put("serverToolCalls", m.serverToolCalls)
                     if (m.citations.isNotBlank()) put("citations", m.citations)
                     if (m.toolNote.isNotBlank()) put("toolNote", m.toolNote)
+                    if (m.incomplete) put("incomplete", true)
                     put("ts", m.ts)
                     m.usage?.let { u ->
                         put("usage", JSONObject().apply {

@@ -61,7 +61,6 @@ fun GalleryScreen(onPickMany: (List<GalleryItem>) -> Unit, onBack: () -> Unit) {
         needPerm = !ok
         nonce++
     }
-    LaunchedEffect(Unit) { if (!granted) permLauncher.launch(permName) }
 
     suspend fun scan(): List<GalleryItem> = withContext(Dispatchers.IO) {
         val out = mutableListOf<GalleryItem>()
